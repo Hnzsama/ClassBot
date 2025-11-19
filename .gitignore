@@ -1,0 +1,30 @@
+# 1. Dependencies
+node_modules/
+
+# 2. Sesi WhatsApp (SENSITIF - Jangan sampai bocor)
+auth_info_baileys/
+
+# 3. Environment Variables (RAHASIA)
+.env
+*.env
+
+# 4. Database SQLite (PENTING: Ini yang kurang)
+# File ini berisi data asli, jangan di-upload ke git
+*.db
+*.db-journal
+prisma/*.db
+prisma/*.db-journal
+
+# 5. Build Output (Jika pakai TypeScript/Build process)
+dist/
+
+# 6. Logs (Sampah sistem)
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 7. System Files (Sampah OS)
+.DS_Store
+Thumbs.db
+.vscode/

@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Class {
+  id          Int      @id @default(autoincrement())
+  groupId     String   @unique @map("group_id")
+  name        String   @map("name")
+  description String?  @map("description")
+
+  semesters   Semester[]
+  members     Member[]
+  tasks       Task[]
+  assignments GroupAssignment[]
+  reminders   Reminder[]
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("classes")
+}
+
+model Semester {
+  id        Int       @id @default(autoincrement())
+  name      String
+  isActive  Boolean   @default(false)
+
+  classId   Int       @map("class_id")
+  class     Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  subjects  Subject[]
+
+  @@map("semesters")
+}
+
+model Subject {
+  id         Int      @id @default(autoincrement())
+  name       String
+  
+  semesterId Int      @map("semester_id")
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+
+  @@map("subjects")
+}
+
+model Task {
+  id           Int   @id @default(autoincrement())
+  mapel        String
+  judul        String
+  deadline     DateTime
+  link         String?
+  status       String   @default("Pending")
+  reminderSent Boolean  @default(false)
+
+  classId      Int      @map("class_id")
+  class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("tasks")
+}
+
+model Member {
+  id        Int     @id @default(autoincrement())
+  nim       String  @unique
+  nama      String
+  panggilan String?
+  
+  classId   Int     @map("class_id")
+  class     Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  subGroups SubGroup[] @relation("MemberSubGroups")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("members")
+}
+
+model GroupAssignment {
+  id        Int      @id @default(autoincrement())
+  judul     String
+  waGroupId String   @map("wa_group_id")
+  
+  classId   Int      @map("class_id")
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  subGroups SubGroup[]
+  createdAt DateTime @default(now())
+
+  @@map("group_assignments")
+}
+
+model SubGroup {
+  id           Int    @id @default(autoincrement())
+  namaSubGrup  String
+  
+  assignmentId Int
+  assignment   GroupAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  members      Member[] @relation("MemberSubGroups")
+
+  @@map("sub_groups")
+}
+
+model Reminder {
+  id        Int      @id @default(autoincrement())
+  pesan     String   // Isi pengingat
+  waktu     DateTime // Kapan harus dikirim
+  isSent    Boolean  @default(false) // Status terkirim
+  
+  sender    String?  // Siapa yang buat (optional, buat info)
+
+  // Relasi ke Kelas (Supaya reminder tidak nyasar ke grup lain)
+  classId   Int      @map("class_id")
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("reminders")
+}
