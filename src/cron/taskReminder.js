@@ -1,81 +1,69 @@
 // src/cron/taskReminder.js
 const cron = require("node-cron");
+const MS_IN_HOUR = 3600000;
 
 module.exports = (bot) => {
-  // Jadwal: Setiap jam 07:00 Pagi
-  cron.schedule('0 7 * * *', async () => {
-    console.log('[CRON-TASK] 🔄 Mengecek deadline tugas H-1...');
-    
+  // Jadwal: Setiap Awal Jam (00 menit)
+  cron.schedule('0 * * * *', async () => {
+    console.log('[CRON-TASK] 🔄 Hourly task check...');
     try {
+      const nowMs = new Date().getTime();
       const pendingTasks = await bot.db.prisma.task.findMany({
-        where: { status: 'Pending', reminderSent: false },
-        include: { class: true }
+        where: { status: 'Pending' },
+        include: { class: true, reminderStatuses: true }
       });
-      
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
 
-      let count = 0;
+      const slots = [
+          { type: 'H-24', thresholdMs: 24 * MS_IN_HOUR },
+          { type: 'H-12', thresholdMs: 12 * MS_IN_HOUR },
+          { type: 'H-6', thresholdMs: 6 * MS_IN_HOUR },
+      ];
 
       for (const task of pendingTasks) {
         if (!task.class) continue;
+        const timeRemainingMs = task.deadline.getTime() - nowMs;
+        const groupId = task.class.mainGroupId;
 
-        const deadlineDate = new Date(task.deadline);
-        const deadlineDay = new Date(deadlineDate.getFullYear(), deadlineDate.getMonth(), deadlineDate.getDate());
+        for (const slot of slots) {
+          // Logika: Waktu sisa masuk dalam range 1 jam dari threshold
+          if (timeRemainingMs > slot.thresholdMs - MS_IN_HOUR && timeRemainingMs <= slot.thresholdMs) {
+            
+            const statusEntry = task.reminderStatuses.find(s => s.reminderType === slot.type);
+            if (statusEntry && statusEntry.isSent) continue;
 
-        // Cek H-1
-        if (deadlineDay.getTime() === tomorrow.getTime()) {
-          const groupId = task.class.groupId;
-          let participants = [];
+            const hours = Math.ceil(timeRemainingMs / MS_IN_HOUR);
+            const deadlineStr = task.deadline.toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: 'medium', timeStyle: 'short' });
 
-          // --- LOGIKA TAG ALL ---
-          try {
-            // Ambil metadata grup untuk mendapatkan ID semua member
-            const metadata = await bot.sock.groupMetadata(groupId);
-            participants = metadata.participants.map((p) => p.id);
-          } catch (e) {
-            console.error(`[CRON-TASK] Gagal fetch member grup ${groupId}:`, e.message);
-          }
-
-          // --- FORMAT PESAN KEREN ---
-          const reminderText = `🚨 *PERINGATAN DEADLINE* 🚨
-          
-Halo warga kelas *${task.class.name}*! 👋
-Jangan lupa, ada tugas yang harus dikumpulkan *BESOK*:
-
-╭──────────────────
+            // --- DESIGN PESAN JAM-JAMAN ---
+            const text = `╭── 📌 *STATUS TUGAS*
+│ 🏫 *Kelas:* ${task.class.name}
 │ 📚 *Mapel:* ${task.mapel}
 │ 📝 *Judul:* ${task.judul}
-│ 🔗 *Link:* ${task.link && task.link !== "-" ? task.link : "_Tidak ada link_"}
-│ ⏳ *Status:* H-1 (Besok)
+│
+│ ⏳ *Sisa Waktu:* ${hours} Jam (${slot.type})
+│ 🗓️ *Deadline:* ${deadlineStr}
 ╰──────────────────
-
-_Mohon segera diselesaikan dan kumpulkan tepat waktu!_
+_Yuk dicicil, jangan ditunda!_
 cc: *All Members*`;
 
-          // Kirim Pesan + Tag All
-          await bot.sock.sendMessage(groupId, { 
-            text: reminderText,
-            mentions: participants // Array ID member untuk mentrigger notifikasi
-          });
+            let participants = [];
+            try {
+              const metadata = await bot.sock.groupMetadata(groupId);
+              participants = metadata.participants.map((p) => p.id);
+            } catch (e) { }
 
-          // Update status DB
-          await bot.db.prisma.task.update({
-            where: { id: task.id },
-            data: { reminderSent: true }
-          });
-          count++;
+            await bot.sock.sendMessage(groupId, { text, mentions: participants });
+
+            if (statusEntry) {
+              await bot.db.prisma.taskReminderStatus.update({ where: { id: statusEntry.id }, data: { isSent: true } });
+            } else {
+              await bot.db.prisma.taskReminderStatus.create({ data: { taskId: task.id, reminderType: slot.type, isSent: true } });
+            }
+          }
         }
       }
-      
-      if (count > 0) console.log(`[CRON-TASK] ${count} reminder dikirim.`);
-      
-    } catch (err) {
-      console.error("[CRON-TASK] Error:", err);
-    }
+    } catch (err) { console.error("[CRON-TASK] Error:", err); }
   }, { timezone: "Asia/Jakarta" });
 
-  console.log("✅ [CRON] Task Reminder (07:00) loaded.");
+  console.log("✅ [CRON] Task Reminder (Hourly) loaded.");
 };

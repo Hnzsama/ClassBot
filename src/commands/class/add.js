@@ -1,3 +1,4 @@
+// src/commands/kelas/add.js
 module.exports = {
   name: "#add-class",
   description: "Daftarkan grup ini sebagai kelas baru. Format: #add-class [Nama Kelas] | [Deskripsi]",
@@ -19,34 +20,41 @@ module.exports = {
     const deskripsi = parts[1] || "Kelas Baru";
 
     try {
-      // 2. Cek apakah grup sudah terdaftar
-      const exist = await bot.db.prisma.class.findUnique({
-        where: { groupId: from }
+      // 2. Cek Validasi Menyeluruh
+      const exist = await bot.db.prisma.class.findFirst({
+        where: {
+            OR: [
+                { mainGroupId: from }, 
+                { inputGroupId: from } 
+            ]
+        }
       });
 
       if (exist) {
-        return await bot.sock.sendMessage(from, { 
-          text: `❌ Grup ini sudah terdaftar sebagai kelas *${exist.name}*.\nGunakan #info-class untuk cek data.` 
-        });
+        // Logika pesan error yang lebih natural
+        if (exist.mainGroupId === from) {
+            return await bot.sock.sendMessage(from, { text: `❌ Grup ini SUDAH terdaftar sebagai Pusat Informasi Kelas *${exist.name}*.` });
+        } else {
+            return await bot.sock.sendMessage(from, { 
+                text: `❌ GAGAL: Grup ini sudah menjadi bagian dari komunitas kelas *${exist.name}*.\nTidak bisa mendaftarkan kelas baru di sini.` 
+            });
+        }
       }
 
       // 3. BUAT KELAS BARU + SEMESTER 1 SEKALIGUS
       const newClass = await bot.db.prisma.class.create({
         data: {
-          groupId: from,
+          mainGroupId: from, 
           name: namaKelas,
           description: deskripsi,
-          // Nested Create: Langsung buatkan Semester 1
           semesters: {
             create: {
               name: "Semester 1",
-              isActive: true // Langsung aktifkan
+              isActive: true 
             }
           }
         },
-        include: {
-          semesters: true // Ambil balikan data semesternya
-        }
+        include: { semesters: true }
       });
 
       const sem1 = newClass.semesters[0];
@@ -57,21 +65,22 @@ module.exports = {
       reply += `📝 Deskripsi: ${newClass.description}\n`;
       reply += `📅 Semester Aktif: *${sem1.name}* (Dibuat Otomatis)\n`;
       
-      // --- TAMBAHAN INSTRUKSI ---
-      reply += `\n⚠️ _Catatan: Jika semester saat ini berbeda, ubah namanya menggunakan perintah:_\n`;
-      reply += `\`#edit-semester ${sem1.id} name [Nama Baru]\`\n`;
-      // --------------------------
-
+      // --- INSTRUKSI KOMUNITAS (Natural Wording) ---
+      reply += `\n────────────────\n`;
+      reply += `*🌐 HUBUNGKAN KOMUNITAS ANDA*\n`;
+      reply += `Ingin memisahkan chat diskusi dari info penting?\n\n`;
+      reply += `Class ID: \`${newClass.id}\`\n`; 
+      reply += `Main Group ID: \`${newClass.mainGroupId}\`\n`; 
+      reply += `\nSalin kode di atas, lalu jalankan perintah ini di grup diskusi/komunitas lain agar terhubung:\n`;
+      reply += `\`#assign-class ${newClass.id} ${newClass.mainGroupId}\`\n`; 
       reply += `────────────────\n`;
+      
       reply += `Langkah selanjutnya:\n`;
       reply += `1. Tambahkan Mapel: \`#add-mapel NamaMapel\`\n`;
       reply += `2. Tambahkan Siswa: \`#add-member NIM | Nama\`\n`;
       reply += `3. Tambahkan Tugas: \`#add-task Mapel | Judul | Tgl\``;
 
-      await bot.sock.sendMessage(from, {
-        text: reply,
-        mentions: [sender]
-      });
+      await bot.sock.sendMessage(from, { text: reply, mentions: [sender] });
 
     } catch (e) {
       console.error("Error add-class:", e);

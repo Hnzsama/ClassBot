@@ -1,15 +1,13 @@
-// commands/randomGrup.js
-
+// src/commands/group/randomGrup.js
 module.exports = {
   name: "#randomgrup",
   description: "Acak kelompok & Simpan ke Database. Format: #randomgrup [jumlah] [Judul Tugas]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, db } = bot;
 
-    // 1. Validasi Input
     if (args.length < 2) {
       return await sock.sendMessage(from, {
-        text: "⚠️ Format salah!\nGunakan: *#randomgrup [jumlah_kelompok] [Judul Tugas]*\n\nContoh:\n`#randomgrup 5 Tugas Makalah Agama`",
+        text: "⚠️ Format salah!\nGunakan: *#randomgrup [jumlah] [Judul]*\nContoh: `#randomgrup 5 Makalah Agama`",
       });
     }
 
@@ -17,34 +15,41 @@ module.exports = {
     const judulTugas = args.slice(1).join(" ");
 
     if (isNaN(jumlahKelompok) || jumlahKelompok <= 0) {
-      return await sock.sendMessage(from, { text: "❌ Jumlah kelompok harus angka lebih dari 0." });
+      return await sock.sendMessage(from, { text: "❌ Jumlah kelompok harus angka > 0." });
     }
 
     try {
-      // 2. Ambil Member
+      // 1. AMBIL KELAS (Dual Group Check)
+      const kelas = await db.prisma.class.findFirst({
+          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+      });
+
+      if (!kelas) {
+          return await sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Gunakan #add-class dulu." });
+      }
+      const classId = kelas.id;
+
+      // 2. AMBIL MEMBER KELAS
       const members = await db.prisma.member.findMany({
-        where: { groupId: from },
+        where: { classId: classId },
         orderBy: { nama: 'asc' }
       });
 
       if (members.length === 0) {
-        return await sock.sendMessage(from, { text: "❌ Data member kosong. Gunakan seed atau input member terlebih dahulu." });
+        return await sock.sendMessage(from, { text: "❌ Data member kosong. Tambahkan member dulu." });
       }
 
       if (jumlahKelompok > members.length) {
-        return await sock.sendMessage(from, { 
-            text: `❌ Jumlah kelompok (${jumlahKelompok}) lebih besar dari jumlah siswa (${members.length}).` 
-        });
+        return await sock.sendMessage(from, { text: `❌ Jumlah kelompok (${jumlahKelompok}) lebih besar dari siswa (${members.length}).` });
       }
 
-      // 3. Logika Pengacakan
+      // 3. LOGIKA ACAK (Fisher-Yates)
       const shuffled = [...members];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
       }
 
-      // 4. Siapkan Payload Prisma
       const groupsPayload = Array.from({ length: jumlahKelompok }, (_, i) => ({
         namaSubGrup: `Kelompok ${i + 1}`,
         members: [] 
@@ -55,60 +60,51 @@ module.exports = {
         groupsPayload[groupIndex].members.push({ id: member.id });
       });
 
-      // 5. Simpan ke Database
+      // 4. SIMPAN KE DATABASE
       const savedAssignment = await db.prisma.groupAssignment.create({
         data: {
           judul: judulTugas,
-          waGroupId: from,
+          waGroupId: kelas.mainGroupId, // Link ke grup utama
+          classId: classId, 
           subGroups: {
             create: groupsPayload.map(g => ({
               namaSubGrup: g.namaSubGrup,
-              members: {
-                connect: g.members
-              }
+              members: { connect: g.members }
             }))
           }
         },
-        include: {
-          subGroups: {
-            include: { members: true }
-          }
-        }
+        include: { subGroups: { include: { members: true } } }
       });
 
-      // 6. Output (MODIFIKASI DISINI: Tampilkan Nama Panggilan)
-      let outputText = `🎲 *HASIL ACAK KELOMPOK* 🎲\n`;
-      outputText += `📚 Tugas: *${savedAssignment.judul}*\n`;
-      outputText += `💾 ID Riwayat: *${savedAssignment.id}*\n`;
-      outputText += `───────────────────\n`;
+      // 5. OUTPUT KEREN (Box Style + Nama Lengkap)
+      let outputText = `╭── 🎲 *HASIL ACAK KELOMPOK*\n`;
+      outputText += `│ 📚 Tugas: *${savedAssignment.judul}*\n`;
+      outputText += `│ 💾 ID Riwayat: #${savedAssignment.id}\n`;
+      outputText += `╰────────────────────────\n`;
 
       savedAssignment.subGroups.forEach((sub) => {
-        outputText += `\n*${sub.namaSubGrup}*\n`;
+        outputText += `\n🔰 *${sub.namaSubGrup.toUpperCase()}*\n`;
+        
         if (sub.members.length === 0) {
-           outputText += `  (Kosong)\n`;
+           outputText += `   _(Kosong)_\n`;
         } else {
-          // Sortir berdasarkan nama panggilan agar urut abjad saat ditampilkan
-          const sortedMembers = sub.members.sort((a, b) => {
-            const nameA = a.panggilan || a.nama; // Prioritas panggilan
-            const nameB = b.panggilan || b.nama;
-            return nameA.localeCompare(nameB);
-          });
-          
-          sortedMembers.forEach((m) => {
-            // Tampilkan Panggilan (jika ada), kalau tidak ada tampilkan Nama Lengkap
-            const displayName = m.panggilan || m.nama;
-            outputText += `┣ ${displayName}\n`;
+          // Sortir nama lengkap agar urut abjad di dalam kelompok
+          const sortedMembers = sub.members.sort((a, b) => a.nama.localeCompare(b.nama));
+          sortedMembers.forEach((m, i) => {
+            // Menggunakan Nama Lengkap (m.nama)
+            outputText += `   ${i + 1}. ${m.nama}\n`;
           });
         }
       });
 
-      outputText += `\n_Data tersimpan. Ketik #list-grup untuk melihat riwayat._`;
+      outputText += `\n────────────────────────\n`;
+      outputText += `💡 _Data tersimpan. Cek kembali dengan #list-grup_`;
 
       await sock.sendMessage(from, { text: outputText });
 
     } catch (err) {
       console.error("Error random grup:", err);
-      await sock.sendMessage(from, { text: "❌ Terjadi kesalahan sistem saat mengacak/menyimpan grup." });
+      await sock.sendMessage(from, { text: "❌ Terjadi kesalahan sistem." });
     }
   },
 };

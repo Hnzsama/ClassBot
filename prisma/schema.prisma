@@ -8,19 +8,20 @@ datasource db {
 }
 
 model Class {
-  id          Int      @id @default(autoincrement())
-  groupId     String   @unique @map("group_id")
-  name        String   @map("name")
-  description String?  @map("description")
+  id            Int      @id @default(autoincrement())
+  mainGroupId   String   @unique @map("main_group_id")   // FIX: Grup Utama/Output (Wajib)
+  inputGroupId  String?  @unique @map("input_group_id")  // Grup Input/Bot (Opsional)
+  name          String   @map("name")
+  description   String?  @map("description")
 
-  semesters   Semester[]
-  members     Member[]
-  tasks       Task[]
-  assignments GroupAssignment[]
-  reminders   Reminder[]
+  semesters     Semester[]
+  members       Member[]
+  tasks         Task[]
+  assignments   GroupAssignment[]
+  reminders     Reminder[]
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("classes")
 }
@@ -49,13 +50,17 @@ model Subject {
 }
 
 model Task {
-  id           Int   @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   mapel        String
   judul        String
   deadline     DateTime
   link         String?
   status       String   @default("Pending")
-  reminderSent Boolean  @default(false)
+  isGroupTask  Boolean  @default(false)
+  
+  attachmentData String?  // <--- BARU: Menyimpan metadata file/gambar yang di-reply
+
+  reminderStatuses TaskReminderStatus[] 
 
   classId      Int      @map("class_id")
   class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
@@ -109,18 +114,32 @@ model SubGroup {
 }
 
 model Reminder {
-  id        Int      @id @default(autoincrement())
-  pesan     String   // Isi pengingat
-  waktu     DateTime // Kapan harus dikirim
-  isSent    Boolean  @default(false) // Status terkirim
+  id             Int       @id @default(autoincrement())
+  pesan          String
+  waktu          DateTime  // Kapan harus dikirim (next execution time)
+  isSent         Boolean   @default(false)
+  sender         String?
   
-  sender    String?  // Siapa yang buat (optional, buat info)
+  // Field Baru: Repeatable Logic
+  repeatInterval String?   // Contoh: '15m', '1h'
+  repeatUntil    DateTime? // Kapan berhenti repeat
 
-  // Relasi ke Kelas (Supaya reminder tidak nyasar ke grup lain)
-  classId   Int      @map("class_id")
-  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  classId        Int       @map("class_id")
+  class          Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   @@map("reminders")
+}
+
+model TaskReminderStatus {
+  id             Int      @id @default(autoincrement())
+  taskId         Int
+  task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  reminderType   String   // Nilai: 'H-24', 'H-12', 'H-6', 'H-1'
+  isSent         Boolean  @default(false)
+  
+  // Pastikan unik agar satu task hanya punya satu status H-24
+  @@unique([taskId, reminderType]) 
+  @@map("task_reminder_status")
 }

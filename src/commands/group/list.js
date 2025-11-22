@@ -1,17 +1,22 @@
-// commands/general/listGrup.js
+// src/commands/group/listGrup.js
 module.exports = {
   name: "#list-grup",
   description: "Menampilkan daftar tugas kelompok yang tersimpan.",
   execute: async (bot, from, sender, args, msg) => {
     try {
-      // Ambil semua assignment di grup WA ini
+      // 1. Cari Kelas (Dual Group Check)
+      const kelas = await bot.db.prisma.class.findFirst({
+          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+      });
+
+      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
+
+      // 2. Ambil History Assignment
       const assignments = await bot.db.prisma.groupAssignment.findMany({
-        where: { waGroupId: from },
-        orderBy: { createdAt: 'desc' }, // Yang terbaru paling atas
+        where: { classId: kelas.id },
+        orderBy: { createdAt: 'desc' },
         include: {
-          _count: {
-            select: { subGroups: true } // Hitung jumlah kelompoknya
-          }
+          _count: { select: { subGroups: true } }
         }
       });
 
@@ -19,17 +24,20 @@ module.exports = {
         return await bot.sock.sendMessage(from, { text: "❌ Belum ada riwayat pembagian kelompok." });
       }
 
-      let text = `📂 *RIWAYAT PEMBAGIAN KELOMPOK*\n\n`;
+      let text = `📂 *RIWAYAT PEMBAGIAN KELOMPOK*\n`;
+      text += `🏫 Kelas: *${kelas.name}*\n`;
+      text += `╰──────────────────────\n`;
       
       assignments.forEach((tugas) => {
-        const tgl = tugas.createdAt.toLocaleDateString("id-ID");
-        text += `🆔 *ID: ${tugas.id}*\n`;
+        const tgl = tugas.createdAt.toLocaleDateString("id-ID", { day: 'numeric', month: 'short', year: 'numeric' });
+        
+        text += `\n🆔 *ID: ${tugas.id}* | 📅 ${tgl}\n`;
         text += `📚 *${tugas.judul}*\n`;
-        text += `📅 ${tgl} | 👥 ${tugas._count.subGroups} Kelompok\n`;
-        text += `──────────────────\n`;
+        text += `👥 Total: ${tugas._count.subGroups} Kelompok\n`;
+        text += `──────────────────────`; // Separator antar item
       });
 
-      text += `\n_Gunakan #detail-grup [ID] untuk melihat anggota._`;
+      text += `\n\n💡 *Lihat Detail:* \`#detail-grup [ID]\``;
       
       await bot.sock.sendMessage(from, { text });
 

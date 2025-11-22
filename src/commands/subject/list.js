@@ -5,37 +5,40 @@ module.exports = {
     if (!from.endsWith("@g.us")) return;
 
     try {
-      // 1. Cari Kelas & Semester Aktif
-      const kelas = await bot.db.prisma.class.findUnique({
-        where: { groupId: from },
+      const kelas = await bot.db.prisma.class.findFirst({
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
         include: {
           semesters: {
-            where: { isActive: true }, // Hanya ambil semester aktif
-            include: { 
-              subjects: { orderBy: { name: 'asc' } } 
-            }
+            where: { isActive: true },
+            include: { subjects: { orderBy: { name: 'asc' } } }
           }
         }
       });
 
-      // Validasi
-      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Gunakan `#add-class`." });
+      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
       
       const activeSem = kelas.semesters[0];
-      if (!activeSem) return bot.sock.sendMessage(from, { text: "❌ Belum ada Semester Aktif. Gunakan `#add-semester` lalu aktifkan." });
+      if (!activeSem) return bot.sock.sendMessage(from, { text: "❌ Belum ada Semester Aktif." });
 
       const subjects = activeSem.subjects;
-      if (subjects.length === 0) return bot.sock.sendMessage(from, { text: `❌ Belum ada mapel di *${activeSem.name}*.` });
+      if (subjects.length === 0) return bot.sock.sendMessage(from, { text: `📂 Belum ada mapel di *${activeSem.name}*.` });
 
-      // 2. Tampilkan Output
-      let text = `📚 *MAPEL KELAS ${kelas.name}*\n`;
-      text += `📅 ${activeSem.name}\n────────────────\n`;
+      // --- FORMAT TAMPILAN BARU ---
+      let text = `📚 *MATA KULIAH KELAS*\n`;
+      text += `🏫 *${kelas.name}*\n`;
+      text += `📅 ${activeSem.name}\n`;
+      text += `──────────────────────\n`;
       
-      subjects.forEach((sub, i) => {
-        text += `${i + 1}. ${sub.name}\n`;
+      subjects.forEach((sub) => {
+        // Menggunakan bullet point buku dan indentasi untuk ID
+        text += `📘 *${sub.name}*\n`;
+        text += `   └ 🆔 ID: \`${sub.id}\`\n`; 
       });
 
-      text += `\n_Total: ${subjects.length} Mata Kuliah_`;
+      text += `──────────────────────\n`;
+      text += `💡 *Edit:* \`#edit-mapel [ID] | [Nama]\`\n`;
+      text += `💡 *Hapus:* \`#delete-mapel [ID]\``;
+      
       await bot.sock.sendMessage(from, { text });
 
     } catch (e) {   

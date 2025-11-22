@@ -1,6 +1,6 @@
 module.exports = {
   name: "#edit-mapel",
-  description: "Edit nama mapel. Format: #edit-mapel [Nama Lama] | [Nama Baru]",
+  description: "Edit nama mapel. Format: #edit-mapel [ID Mapel] | [Nama Baru]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
     
@@ -9,46 +9,49 @@ module.exports = {
 
     if (parts.length < 2) {
       return bot.sock.sendMessage(from, { 
-        text: "⚠️ Format Salah!\nContoh: `#edit-mapel Algo | Algoritma Pemrograman`" 
+        text: "⚠️ Format Salah!\nContoh: `#edit-mapel 55 | Algoritma Lanjut`\n(Gunakan ID dari #list-mapel)" 
       });
     }
 
-    const [oldName, newName] = parts;
+    const [idStr, newName] = parts;
+    const targetId = parseInt(idStr);
+
+    if (isNaN(targetId)) return bot.sock.sendMessage(from, { text: "❌ ID Mapel harus angka." });
 
     try {
       // 1. Cari Kelas & Semester Aktif
-      const kelas = await bot.db.prisma.class.findUnique({
-        where: { groupId: from },
+      const kelas = await bot.db.prisma.class.findFirst({
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
         include: { 
-          semesters: { 
-            where: { isActive: true },
-            include: { subjects: true }
-          } 
+          semesters: { where: { isActive: true } } 
         }
       });
 
       if (!kelas || kelas.semesters.length === 0) return bot.sock.sendMessage(from, { text: "❌ Semester aktif tidak ditemukan." });
-
       const activeSem = kelas.semesters[0];
-      const subjects = activeSem.subjects;
 
-      // 2. Cari Mapel Target (Case Insensitive Search)
-      const target = subjects.find(s => s.name.toLowerCase() === oldName.toLowerCase());
+      // 2. Cari Mapel Target berdasarkan ID dan Semester (Security Check)
+      const target = await bot.db.prisma.subject.findFirst({
+          where: {
+              id: targetId,
+              semesterId: activeSem.id
+          }
+      });
 
       if (!target) {
         return bot.sock.sendMessage(from, { 
-          text: `❌ Mapel *"${oldName}"* tidak ditemukan di semester ini.\nCek nama di \`#list-mapel\`.` 
+          text: `❌ Mapel dengan ID *${targetId}* tidak ditemukan di semester ini.` 
         });
       }
 
       // 3. Update
       await bot.db.prisma.subject.update({
-        where: { id: target.id },
+        where: { id: targetId },
         data: { name: newName }
       });
 
       await bot.sock.sendMessage(from, { 
-        text: `✏️ Mapel diubah:\n*${target.name}* ➝ *${newName}*` 
+        text: `✏️ *UPDATE BERHASIL*\n\nID: ${targetId}\nDari: ~${target.name}~\nMenjadi: *${newName}*` 
       });
 
     } catch (e) {

@@ -1,10 +1,11 @@
-// commands/member/edit.js
+// src/commands/member/edit.js
 module.exports = {
   name: "#edit-member",
   description: "Edit member. Format: #edit-member [3 digit NIM] [field] [value]",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
-    if (args.length < 3) return bot.sock.sendMessage(from, { text: "⚠️ Contoh: `#edit-member 001 nama Budi`" });
+    
+    if (args.length < 3) return bot.sock.sendMessage(from, { text: "⚠️ Format Salah! Contoh: `#edit-member 001 nama Budi`" });
 
     const nimSuffix = args[0];
     const field = args[1].toLowerCase();
@@ -13,14 +14,16 @@ module.exports = {
     if (!["nama", "panggilan"].includes(field)) return bot.sock.sendMessage(from, { text: "❌ Hanya bisa edit 'nama' atau 'panggilan'." });
 
     try {
-      // 1. Cek Kelas
-      const kelas = await bot.db.prisma.class.findUnique({ where: { groupId: from } });
+      // FIX: Dual Group Check
+      const kelas = await bot.db.prisma.class.findFirst({
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+      });
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
-      // 2. Cari Member di Kelas INI yang NIM-nya berakhiran X
+      // 2. Cari Member
       const candidates = await bot.db.prisma.member.findMany({
         where: {
-          classId: kelas.id, // Filter wajib
+          classId: kelas.id,
           nim: { endsWith: nimSuffix }
         }
       });
@@ -30,14 +33,14 @@ module.exports = {
 
       const target = candidates[0];
 
-      // 3. Update
+      // 3. Update (Gunakan NIM asli yang unik global)
       await bot.db.prisma.member.update({
         where: { nim: target.nim },
         data: { [field]: newValue }
       });
 
       await bot.sock.sendMessage(from, {
-        text: `✏️ *Member Diupdate*\nNIM: ${target.nim}\n${field} -> ${newValue}\n\nOleh: @${sender.split("@")[0]}`,
+        text: `✏️ *Member Diupdate*\nNIM: ${target.nim}\n${field.toUpperCase()} -> *${newValue}*`,
         mentions: [sender]
       });
 

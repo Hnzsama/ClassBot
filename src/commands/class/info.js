@@ -5,9 +5,14 @@ module.exports = {
     if (!from.endsWith("@g.us")) return;
 
     try {
-      // 1. Ambil Data Kelas + Semester Aktif + Count Relasi
-      const kelas = await bot.db.prisma.class.findUnique({
-        where: { groupId: from },
+      // 1. Ambil Data Kelas + Semester Aktif + Count Relasi (FIX: Dual Group Check)
+      const kelas = await bot.db.prisma.class.findFirst({
+        where: {
+          OR: [
+            { mainGroupId: from }, // Cek apakah pesan datang dari Grup Utama
+            { inputGroupId: from } // Cek apakah pesan datang dari Grup Input
+          ]
+        },
         include: {
           // Ambil hanya semester yang aktif
           semesters: {
@@ -44,14 +49,19 @@ module.exports = {
         where: { classId: kelas.id, status: "Pending" }
       });
 
-      // 2. Susun Pesan
+      // 2. Susun Pesan (WORDING DIPERJELAS)
       let text = `🏫 *INFORMASI KELAS*\n`;
       text += `──────────────────\n`;
       text += `🏷️ Nama: *${kelas.name}*\n`;
       text += `📝 Deskripsi: ${kelas.description || "-"}\n`;
-      text += `🆔 System ID: ${kelas.id}\n`;
-      text += `\n`;
-      text += `📅 *SEMESTER SAAT INI*\n`;
+      text += `🆔 ID Sistem: ${kelas.id}\n`;
+      
+      // DISPLAY NEW GROUP JIDS (Lebih user-friendly)
+      text += `\n*🔗 Status Koneksi Grup:*\n`;
+      text += `📢 Grup Utama (Output): \`${kelas.mainGroupId}\`\n`; 
+      text += `💬 Grup Komunitas (Input): \`${kelas.inputGroupId || '(Belum Diatur)'}\`\n`; 
+      
+      text += `\n📅 *SEMESTER SAAT INI*\n`;
       text += `Status: ${semesterName}\n`;
       text += `ID Semester: ${semesterId}\n`;
       text += `📚 Jumlah Mapel: ${mapelCount}\n`;

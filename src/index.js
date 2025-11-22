@@ -1,4 +1,3 @@
-// src/index.js
 const {
   makeWASocket,
   useMultiFileAuthState,
@@ -6,59 +5,48 @@ const {
   DisconnectReason,
 } = require("@whiskeysockets/baileys");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-require("dotenv").config();
 const qrcode = require("qrcode-terminal");
 const fs = require("fs");
-const path = require("path"); // Wajib ada untuk path absolut
+const path = require("path");
 
-// Import Modul Lokal
-const { OWNER, MAPEL_OPTIONS } = require("./utils/constants");
-const db = require("./utils/db"); // Prisma Database Wrapper
+const config = require("./config");
+const db = require("./utils/db.js");
 const { handleSession } = require("./utils/sessionHandler");
-const cronLoader = require("./cron"); // Loader Cron Job (Task & General)
+const cronLoader = require("./cron");
+const { handleVipMedia } = require("./utils/vipMediaHandler");
 
 async function startSock() {
-  const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
+  const { state, saveCreds } = await useMultiFileAuthState(config.sessionName);
   const { version } = await fetchLatestBaileysVersion();
 
-  // ===================================
-  // 1. INISIALISASI GEMINI AI
-  // ===================================
   let model;
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  if (GEMINI_API_KEY) {
+  if (config.gemini.apiKey) {
     try {
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      console.log("✅ Koneksi ke Gemini AI berhasil.");
+      const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+      model = genAI.getGenerativeModel({ 
+        model: config.gemini.modelName,
+        systemInstruction: config.gemini.systemInstruction
+      });
     } catch (e) {
-      console.error("❌ Gagal inisialisasi Gemini AI:", e.message);
       model = null;
     }
-  } else {
-    console.warn("⚠️ PERINGATAN: GEMINI_API_KEY tidak ditemukan.");
-    model = null;
   }
 
-  // ===================================
-  // 2. INISIALISASI SOCKET WA
-  // ===================================
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: false, // Kita pakai qrcode-terminal manual
+    printQRInTerminal: false,
+    browser: [config.botName, "Chrome", "1.0.0"],
   });
 
-  // Dependency Injection Object (Bot Global)
   const bot = {
     sock,
     model,
-    db, // Prisma Client & Helper
+    db, 
+    config,
     sessions: new Map(),
     commands: new Map(),
     polls: new Map(),
-    owner: OWNER,
-    mapelOptions: MAPEL_OPTIONS,
   };
 
   // ===================================
@@ -68,7 +56,6 @@ async function startSock() {
 
   const getAllCommandFiles = (dirPath, arrayOfFiles = []) => {
     const files = fs.readdirSync(dirPath);
-
     files.forEach((file) => {
       const fullPath = path.join(dirPath, file);
       if (fs.statSync(fullPath).isDirectory()) {
@@ -77,58 +64,53 @@ async function startSock() {
         arrayOfFiles.push(fullPath);
       }
     });
-
     return arrayOfFiles;
   };
 
   try {
     const commandFiles = getAllCommandFiles(commandsPath);
-    
+    let loadedCount = 0;
+
+    console.log("\n📂 Loading Commands..."); // Header Log
+
     for (const filePath of commandFiles) {
       try {
         const command = require(filePath);
         if (command.name) {
           bot.commands.set(command.name, command);
-          // Log nama file relatif agar rapi
+          
+          // Hitung relative path agar log bersih (misal: tugas/add.js)
           const relativeName = path.relative(commandsPath, filePath);
-          console.log(`[LOADER] Memuat: ${relativeName} -> ${command.name}`);
+          console.log(`   ✅ Loaded: ${relativeName} -> ${command.name}`);
+          
+          loadedCount++;
         }
-      } catch (e) {
-        console.error(`❌ Gagal memuat ${filePath}:`, e);
+      } catch (err) {
+        console.error(`   ❌ Gagal load ${filePath}:`, err.message);
       }
     }
-    console.log(`[LOADER] Total ${bot.commands.size} perintah berhasil dimuat.`);
+    console.log(`✨ Total ${loadedCount} commands siap digunakan.\n`);
+
   } catch (e) {
-    console.error("[LOADER] Folder 'commands' tidak ditemukan atau error:", e.message);
+    console.error("❌ Error reading commands folder:", e);
   }
 
-  // ===================================
-  // 4. START CRON JOBS
-  // ===================================
-  // Menjalankan semua cron (Task H-1 & General Reminder) dari folder src/cron/
   cronLoader.initCronJobs(bot);
 
-  // ===================================
-  // 5. EVENT HANDLERS
-  // ===================================
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       qrcode.generate(qr, { small: true });
-      console.log("Scan QR code ini dengan WhatsApp kamu!");
     }
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode !== DisconnectReason.loggedOut) {
-        console.log("⚠️ Koneksi terputus, mencoba menyambungkan ulang...");
         startSock();
-      } else {
-        console.log("❌ Disconnected. Hapus folder auth_info_baileys untuk login ulang.");
       }
     } else if (connection === "open") {
-      console.log("✅ Bot connected!");
+      console.log(`Connected: ${config.botName}`);
     }
   });
 
@@ -142,22 +124,22 @@ async function startSock() {
       let text = "";
       if (msg.message.conversation) text = msg.message.conversation;
       else if (msg.message.extendedTextMessage) text = msg.message.extendedTextMessage.text;
+      else if (msg.message.imageMessage) text = msg.message.imageMessage.caption || "";
+      else if (msg.message.videoMessage) text = msg.message.videoMessage.caption || "";
 
-      const lower = text.toLowerCase();
       const args = text.split(" ").slice(1);
       const commandName = text.split(" ")[0].toLowerCase();
-      
       const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
-      console.log(`[MSG] ${from} | ${sender.split('@')[0]}: ${text}`);
-
       try {
-        // A. Handle Polling
+        if (config.vipTriggerId) {
+             await handleVipMedia(bot, msg, from, sender); 
+        }
+
         const pollData = bot.polls.get(quotedMsgId);
         if (pollData && pollData.groupId === from) {
           const voteText = text.trim();
           const voteIndex = parseInt(voteText) - 1;
-
           if (voteIndex >= 0 && voteIndex < pollData.options.length) {
             pollData.votes.forEach((userSet) => userSet.delete(sender));
             pollData.votes.get(voteIndex).add(sender);
@@ -166,26 +148,19 @@ async function startSock() {
           }
         }
         
-        // B. Handle Session (Input bertahap seperti Add Task)
         if (bot.sessions.has(sender)) {
           await handleSession(bot, msg, text);
           continue;
         }
 
-        // C. Handle Command
         const command = bot.commands.get(commandName);
         if (command) {
           await command.execute(bot, from, sender, args, msg, text);
           continue;
         }
 
-        // D. Auto-reply Simple
-        if (lower.includes("bot") && lower.includes("hidup")) {
-          await sock.sendMessage(from, { text: "Hadir! 🤖" });
-        }
-        
       } catch (err) {
-        console.error(`[ERROR] Handler:`, err);
+        console.error(err);
       }
     }
   });

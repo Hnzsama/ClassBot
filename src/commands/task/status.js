@@ -5,10 +5,7 @@ module.exports = {
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
-    // Validasi Argumen
-    // Bisa pakai pipa | atau spasi biasa. Kita bersihkan dulu.
     const cleanText = text.replace("#task-status", "").replace("|", " ").trim(); 
-    // Split berdasarkan spasi, ambil elemen yang tidak kosong
     const parts = cleanText.split(/\s+/); 
 
     if (parts.length < 2) {
@@ -24,7 +21,6 @@ module.exports = {
         return bot.sock.sendMessage(from, { text: "❌ ID harus angka." });
     }
 
-    // Normalisasi Status
     let newStatus = "Pending";
     if (["done", "selesai", "kelar", "sudah"].includes(statusArg)) {
         newStatus = "Selesai";
@@ -35,11 +31,16 @@ module.exports = {
     }
 
     try {
-        // 1. Cari Tugas & Validasi Grup
+        // 1. Cari Tugas & Validasi Grup (Dual Check via Relasi Class)
         const task = await bot.db.prisma.task.findFirst({
             where: { 
                 id: taskId,
-                class: { groupId: from } 
+                class: { 
+                    OR: [
+                        { mainGroupId: from },
+                        { inputGroupId: from }
+                    ]
+                }
             }
         });
 
@@ -53,7 +54,7 @@ module.exports = {
             data: { status: newStatus }
         });
 
-        // 3. Kirim Konfirmasi & Tag User
+        // 3. Kirim Konfirmasi
         const icon = newStatus === "Selesai" ? "✅" : "⏳";
         
         await bot.sock.sendMessage(from, {

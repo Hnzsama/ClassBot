@@ -1,20 +1,22 @@
-// commands/member/list.js (Ganti nama file sesuai file list kamu)
+// src/commands/member/list.js
 module.exports = {
   name: "#list-member",
   description: "Daftar member. Filter: [3 digit NIM]",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
 
-    let nimFilter = args.find(arg => !isNaN(arg));
+    const nimFilter = args.find(arg => !isNaN(arg)); // Ambil argumen angka
 
     try {
-      // 1. Ambil ID Kelas dari Grup ini
-      const kelas = await bot.db.prisma.class.findUnique({ where: { groupId: from } });
-      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Admin harus ketik #add-class dulu." });
+      // FIX: Dual Group Check
+      const kelas = await bot.db.prisma.class.findFirst({
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+      });
+      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
-      // 2. Query Member berdasarkan classId
+      // 2. Query Member
       const queryOptions = {
-        where: { classId: kelas.id }, // <--- PENTING: Pakai ID Kelas
+        where: { classId: kelas.id },
         orderBy: { nim: "asc" },
       };
 
@@ -28,12 +30,12 @@ module.exports = {
         return bot.sock.sendMessage(from, { text: "❌ Tidak ada data member di kelas ini." });
       }
 
-      // Format Output
-      let header = `👥 *MEMBER ${kelas.name}*\n`; // Ambil nama kelas dari DB
-      if (nimFilter) header += `🔍 Filter: ...${nimFilter}\n`;
-      header += `📊 Total: ${members.length}\n------------------\n`;
+      // Format Output Keren
+      let header = `👥 *MEMBER KELAS ${kelas.name}*\n`;
+      if (nimFilter) header += `🔍 Filter NIM: ...${nimFilter}\n`;
+      header += `📊 Total: ${members.length} Mahasiswa\n──────────────────\n`;
 
-      const list = members.map((m, i) => `${i + 1}. ${m.nama} - ${m.nim}`).join("\n");
+      const list = members.map((m, i) => `${i + 1}. ${m.nama} (${m.nim})`).join("\n");
 
       await bot.sock.sendMessage(from, { text: header + list });
 
