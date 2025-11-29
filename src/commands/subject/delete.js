@@ -1,39 +1,37 @@
 // src/commands/mapel/delete.js
 module.exports = {
   name: "#delete-mapel",
-  description: "Hapus mapel. Format: #delete-mapel [ID Mapel 1] [ID 2]... (--force)",
+  description: "Hapus mapel. Format: #delete-mapel [ID 1] [ID 2]... (--force)",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
-    // 1. Parse Multiple DB IDs
+    // 1. Parse Input (Ambil semua angka dari argumen)
     const isForce = text.includes("--force");
     const dbIds = args.filter(arg => !isNaN(parseInt(arg))).map(id => parseInt(id)); 
     
     if (dbIds.length === 0) {
-        return bot.sock.sendMessage(from, { text: "⚠️ Masukkan setidaknya satu ID Mapel yang valid (Angka DB). Contoh: `#delete-mapel 487 490`" });
+        return bot.sock.sendMessage(from, { 
+            text: "⚠️ *Format Salah*\n\nMasukkan ID Mapel yang ingin dihapus (bisa banyak sekaligus).\nContoh: `#delete-mapel 55 56`\n\n_(Cek ID di #list-mapel)_" 
+        });
     }
 
     try {
-      // 2. Cari Kelas & Ambil Semua Semester ID-nya
+      // 2. Cari Kelas & Validasi Semester (Security)
       const kelas = await bot.db.prisma.class.findFirst({
         where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
-        include: { semesters: { select: { id: true } } } // Ambil hanya ID semesternya
+        include: { semesters: { select: { id: true } } } 
       });
 
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas tidak ditemukan." });
       
-      // Array berisi ID semester milik kelas ini
       const validSemesterIds = kelas.semesters.map(s => s.id);
+      if (validSemesterIds.length === 0) return bot.sock.sendMessage(from, { text: "❌ Kelas ini belum memiliki semester." });
 
-      if (validSemesterIds.length === 0) {
-          return bot.sock.sendMessage(from, { text: "❌ Kelas ini belum memiliki semester." });
-      }
-
-      // 3. Ambil subjects berdasarkan ID DB dan Valid Semester IDs (Security Check)
+      // 3. Ambil subjects target
       const subjectsToDelete = await bot.db.prisma.subject.findMany({ 
           where: { 
               id: { in: dbIds }, 
-              semesterId: { in: validSemesterIds } // Filter: Hanya subject yang ada di semester milik kelas ini
+              semesterId: { in: validSemesterIds } 
           },
           select: { id: true, name: true } 
       });
@@ -42,57 +40,80 @@ module.exports = {
            return bot.sock.sendMessage(from, { text: `❌ Tidak ditemukan mapel dengan ID: ${dbIds.join(', ')} di kelas ini.` });
       }
 
-      let report = { deleted: 0, failedTasks: 0, blocked: [] };
+      // 4. Proses Filter & Validasi Tugas
       const finalIdsToDelete = [];
-      const classId = kelas.id;
+      const successLog = [];
+      const blockedLog = [];
 
-      // 4. Sequential Deletion and Validation
       for (const target of subjectsToDelete) {
-          // A. Safety Check (Count related tasks)
-          // Task terhubung langsung ke Class, jadi kita cek by ClassID & Nama Mapel
+          // Cek tugas terkait
           const relatedTasks = await bot.db.prisma.task.count({
             where: {
-              classId: classId,
+              classId: kelas.id,
               mapel: target.name 
             }
           });
           
-          // B. Enforce Force Flag
+          // Logic Block vs Force
           if (relatedTasks > 0 && !isForce) {
-              report.blocked.push(`ID ${target.id} (${target.name}) — ${relatedTasks} tugas terkait`);
-              report.failedTasks++;
-              continue;
+              blockedLog.push({
+                  name: target.name,
+                  id: target.id,
+                  reason: `${relatedTasks} tugas aktif`
+              });
+          } else {
+              // Masukkan ke antrean hapus
+              finalIdsToDelete.push(target.id);
+              successLog.push({
+                  name: target.name,
+                  id: target.id
+              });
           }
-
-          // C. Collect ID for Deletion
-          finalIdsToDelete.push(target.id);
       }
 
-      // 5. Eksekusi Delete Massal di Database
+      // 5. Eksekusi Delete Massal
       if (finalIdsToDelete.length > 0) {
-          const result = await bot.db.prisma.subject.deleteMany({ 
+          await bot.db.prisma.subject.deleteMany({ 
               where: { id: { in: finalIdsToDelete } } 
           });
-          report.deleted = result.count;
       }
 
-      // 6. Kirim Info & Report Summary
-      let reply = `🗑️ *PENGHAPUSAN BERHASIL* 🗑️\n\n`;
-      reply += `✅ *Total Dihapus:* ${report.deleted} mapel.\n`;
+      // 6. Susun Laporan Keren
+      let reply = `🗑️ *LAPORAN PENGHAPUSAN MAPEL*\n`;
+      reply += `──────────────────────\n`;
 
-      if (report.failedTasks > 0) {
-          reply += `\n⛔ *DIBLOKIR (${report.failedTasks}):* \n`;
-          reply += report.blocked.join('\n');
-          reply += `\n\n_Ulangi dengan flag \`--force\` jika Anda ingin menghapus yang terblokir._`;
-      } else if (report.blocked.length > 0) {
-          reply += `\n⚠️ *Peringatan:* Beberapa ID tidak ditemukan (${report.blocked.length} invalid).`;
+      // Section Sukses
+      if (successLog.length > 0) {
+          reply += `✅ *Berhasil Dihapus (${successLog.length}):*\n`;
+          successLog.forEach(item => {
+              reply += `• ~${item.name}~ (ID: ${item.id})\n`;
+          });
+          reply += `\n`;
+      }
+
+      // Section Gagal/Blocked
+      if (blockedLog.length > 0) {
+          reply += `⛔ *Gagal / Ditahan (${blockedLog.length}):*\n`;
+          blockedLog.forEach(item => {
+              reply += `• *${item.name}* (ID: ${item.id})\n`;
+              reply += `   └ ⚠️ Tertahan: Ada ${item.reason}.\n`;
+          });
+          
+          reply += `\n💡 *Solusi:* Tambahkan \`--force\` di akhir perintah untuk memaksa hapus.\n`;
+          reply += `_Contoh: #delete-mapel ${blockedLog[0].id} --force_`;
       }
       
-      await bot.sock.sendMessage(from, { text: reply });
+      reply += `\n──────────────────────\n`;
+      reply += `👤 Oleh: @${sender.split("@")[0]}`;
+
+      await bot.sock.sendMessage(from, { 
+          text: reply,
+          mentions: [sender]
+      });
 
     } catch (e) {
-      console.error("Error multi-delete mapel:", e);
-      await bot.sock.sendMessage(from, { text: "❌ Gagal menghapus mapel secara massal." });
+      console.error("Error delete-mapel:", e);
+      await bot.sock.sendMessage(from, { text: "❌ Gagal menghapus mapel." });
     }
   }
 };

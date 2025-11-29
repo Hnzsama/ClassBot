@@ -9,10 +9,12 @@ datasource db {
 
 model Class {
   id            Int      @id @default(autoincrement())
-  mainGroupId   String   @unique @map("main_group_id")   // FIX: Grup Utama/Output (Wajib)
-  inputGroupId  String?  @unique @map("input_group_id")  // Grup Input/Bot (Opsional)
+  mainGroupId   String   @unique @map("main_group_id")
+  inputGroupId  String?  @unique @map("input_group_id")
   name          String   @map("name")
   description   String?  @map("description")
+  
+  enableFilter  Boolean  @default(false) @map("enable_filter") // Saklar Filter Kata
 
   semesters     Semester[]
   members       Member[]
@@ -116,13 +118,15 @@ model SubGroup {
 model Reminder {
   id             Int       @id @default(autoincrement())
   pesan          String
-  waktu          DateTime  // Kapan harus dikirim (next execution time)
+  waktu          DateTime
   isSent         Boolean   @default(false)
-  sender         String?
+  sender         String?   // Pembuat reminder
   
-  // Field Baru: Repeatable Logic
-  repeatInterval String?   // Contoh: '15m', '1h'
-  repeatUntil    DateTime? // Kapan berhenti repeat
+  // Field Baru: Menyimpan list orang yang ditag
+  targetMembers  String?   // Format: "6281xxx@s.whatsapp.net,6282xxx@s.whatsapp.net"
+
+  repeatInterval String?
+  repeatUntil    DateTime?
 
   classId        Int       @map("class_id")
   class          Class     @relation(fields: [classId], references: [id], onDelete: Cascade)

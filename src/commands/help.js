@@ -1,4 +1,3 @@
-// src/commands/general/help.js
 module.exports = {
   name: "#help",
   description: "Pusat bantuan bot. Format: #help [kategori]",
@@ -9,51 +8,42 @@ module.exports = {
     const category = args[0] ? args[0].toLowerCase() : "";
 
     // ============================================================
-    // 1. SUB-MENU: SETUP (PANDUAN AWAL)
+    // 1. SUB-MENU: SETUP
     // ============================================================
-    if (category === "setup" || category === "panduan" || category === "onboarding") {
-      const text = `⚙️ *PANDUAN AKTIVASI KELAS BARU*
-Prosedur langkah demi langkah untuk Admin:
+    if (category === "setup" || category === "panduan") {
+      const text = `⚙️ *PANDUAN SETUP ADMIN*
 
-*TAHAP 1: BUAT KELAS (Di Grup Utama/Output)*
-1. Ketik: \`#add-class [Nama Kelas] | [Deskripsi]\`
-   _(Bot akan membuat Kelas & Semester 1 otomatis)_
-2. Catat *Class ID* dan *Main Group ID* yang muncul.
+*1. BUAT KELAS (Di Grup Utama)*
+Ketik: \`#add-class [Nama], [Deskripsi]\`
+_(Gunakan koma sebagai pemisah)_
 
-*TAHAP 2: HUBUNGKAN KOMUNITAS (Di Grup Input)*
-Jika Anda ingin memisahkan grup chat (diskusi) dengan grup info:
-1. Pergi ke grup diskusi/komunitas.
-2. Ketik: \`#assign-class [Class ID] [Main Group ID]\`
+*2. KURIKULUM (Semester & Mapel)*
+Ketik: \`#semester-ai Buatkan semester 1 sampai 8 lalu aktifkan semester 1\`
+Ketik: \`#mapel-ai Tambahkan mapel Matematika, Algoritma, Basis Data\`
 
-*TAHAP 3: KURIKULUM & MEMBER*
-1. Buat semester lanjutan: \`#add-semester-ai 8\`
-2. Tambah mapel (AI): \`#add-mapel-ai [List Mapel/Silabus]\`
-3. *Saran Member:* Minta mahasiswa input data sendiri via:
-   \`#add-member [NIM] | [Nama] | [Panggilan]\`
+*3. DATA MAHASISWA*
+Ketik: \`#add-member-ai\`
+_(Lalu kirim foto absensi/list nama)_
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
     // ============================================================
-    // 2. SUB-MENU: COMMUNITY (DUAL GROUP)
+    // 2. SUB-MENU: COMMUNITY
     // ============================================================
-    if (category === "community" || category === "komunitas") {
+    if (category === "community") {
       const text = `🌐 *BANTUAN: COMMUNITY GROUP*
-Sistem untuk memisahkan *Grup Info* (Output) dan *Grup Chat* (Input).
-
-*KONSEP:*
-- *Grup Utama (Output):* Tempat Bot mengirim Reminder & Jadwal. (Biasanya "Only Admin").
-- *Grup Komunitas (Input):* Tempat Member mengetik command bot (#add-task, tanya jawab, dll).
+Pisahkan Grup Info (Output) & Grup Chat (Input).
 
 *PERINTAH:*
-├ \`#add-class [Nama] | [Deskripsi]\`
-│ (Jalankan di Grup Utama untuk mendaftar).
+├ \`#add-class [Nama], [Deskripsi]\`
+│ (Jalankan di Grup Utama/Info).
 │
 ╰ \`#assign-class [Class ID] [Main Group ID]\`
-  (Jalankan di Grup Komunitas untuk menautkan).
+  (Jalankan di Grup Komunitas/Chat).
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
@@ -66,21 +56,18 @@ _Ketik_ \`#help\` _untuk kembali ke menu utama._`;
 ╭── [ *Perintah Kelas* ]
 │
 ├ \`#info-class\`
-│ Cek status kelas, ID Grup (Main/Input), & statistik.
+│ Cek status kelas & statistik.
 │
-├ \`#add-class [Nama] | [Deskripsi]\`
-│ Daftar kelas baru (Gunakan di Grup Utama).
-│
-├ \`#assign-class [ID] [MainID]\`
-│ Tautkan grup input (Gunakan di Grup Komunitas).
+├ \`#add-class [Nama], [Deskripsi]\`
+│ Daftar kelas baru (Gunakan Koma).
 │
 ├ \`#edit-class nama [Baru]\`
-│ Ubah nama kelas.
+│ Ubah nama kelas (Gunakan Spasi).
 │
 ╰ \`#edit-class semester [ID]\`
   Pindah/Aktifkan semester baru.
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
@@ -90,24 +77,27 @@ _Ketik_ \`#help\` _untuk kembali ke menu utama._`;
     if (category === "semester") {
       const text = `📅 *BANTUAN: SEMESTER*
 
-╭── [ *Perintah Semester* ]
+╭── [ *AI Manager (Rekomendasi)* ]
+│
+╰ \`#semester-ai [Instruksi Natural]\`
+  Contoh: "Buatkan semester 1-8 lalu aktifkan smt 3"
+  Contoh: "Ganti nama semester 9 jadi Skripsi"
+
+╭── [ *Manual* ]
 │
 ├ \`#list-semester\`
-│ Lihat daftar semester & ID-nya.
+│ Lihat daftar semester.
 │
-├ \`#add-semester-ai [Angka]\`
-│ Buat semester urut otomatis (misal: 1 s/d 8).
-│
-├ \`#add-semester [Nama 1] | [Nama 2]\`
-│ Tambah semester manual (Batch).
+├ \`#add-semester [Nama 1], [Nama 2]\`
+│ Tambah manual (Batch dg Koma).
 │
 ├ \`#edit-semester [ID] status 1\`
-│ Aktifkan semester (Pindah Semester).
+│ Aktifkan semester (Gunakan Spasi).
 │
 ╰ \`#delete-semester [ID]\`
-  Hapus semester (Hanya jika tidak aktif).
+  Hapus semester.
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
@@ -117,24 +107,27 @@ _Ketik_ \`#help\` _untuk kembali ke menu utama._`;
     if (category === "mapel") {
       const text = `📚 *BANTUAN: MATA KULIAH*
 
-╭── [ *Perintah Mapel* ]
+╭── [ *AI Manager (Rekomendasi)* ]
+│
+╰ \`#mapel-ai [Instruksi/Foto]\`
+  Reply foto jadwal atau ketik perintah:
+  "Tambah Algoritma dan Pkn, hapus Matematika"
+
+╭── [ *Manual* ]
 │
 ├ \`#list-mapel\`
-│ Lihat daftar mapel & ID-nya.
+│ Lihat daftar mapel.
 │
-├ \`#add-mapel-ai [Deskripsi/Teks]\`
-│ Tambah mapel pintar (AI Extract).
+├ \`#add-mapel [Nama 1], [Nama 2]\`
+│ Tambah manual (Batch dg Koma).
 │
-├ \`#add-mapel [Nama 1] | [Nama 2]\`
-│ Tambah manual (Batch).
+├ \`#edit-mapel [ID] [Nama Baru]\`
+│ Edit nama mapel (Gunakan Spasi).
 │
-├ \`#edit-mapel [ID] | [Nama Baru]\`
-│ Edit nama mapel.
-│
-╰ \`#delete-mapel [ID 1] [ID 2] ...\`
-  Hapus mapel (Bisa banyak sekaligus).
+╰ \`#delete-mapel [ID]\`
+  Hapus mapel.
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
@@ -143,123 +136,125 @@ _Ketik_ \`#help\` _untuk kembali ke menu utama._`;
     // ============================================================
     if (category === "tugas" || category === "task") {
       const text = `📝 *BANTUAN: TUGAS / PR*
-(Auto Reminder: H-24, H-12, H-6, H-1 Jam)
+(Auto Close: Tugas otomatis selesai jika waktu habis)
 
-╭── [ *Perintah Tugas* ]
+╭── [ *AI Manager (Rekomendasi)* ]
+│
+╰ \`#task-ai [Instruksi/Foto]\`
+  "Tambah tugas Algo deadline besok judul Array"
+  "Hapus tugas Pkn"
+  "Ganti deadline tugas Basis Data jadi lusa"
+
+╭── [ *Manual* ]
 │
 ├ \`#list-task (all/done)\`
 │ Lihat daftar tugas.
 │
 ├ \`#add-task\`
-│ Mode Interaktif (Tanya Jawab).
-│
-├ \`#add-task-ai [Teks]\`
-│ Mode Cepat / Reply Gambar.
+│ Mode Tanya-Jawab Interaktif.
 │
 ├ \`#detail-task [ID]\`
-│ Cek detail & download lampiran.
+│ Cek detail & lampiran.
 │
 ├ \`#task-status [ID] done\`
-│ Tandai selesai dengan cepat.
+│ Tandai selesai.
 │
 ├ \`#edit-task [ID] [Opsi] [Nilai]\`
-│ Edit data. Opsi: \`judul\`, \`deadline\`, \`status\`, \`link\`, \`attachment\`, \`tipe\`.
+│ Edit data (Gunakan Spasi).
 │
-╰ \`#delete-task [ID 1] [ID 2]\`
-  Hapus tugas & file lampirannya.
+╰ \`#delete-task [ID]\`
+  Hapus tugas & filenya.
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
     // ============================================================
     // 7. SUB-MENU: REMINDER
     // ============================================================
-    if (category === "reminder" || category === "pengingat") {
+    if (category === "reminder") {
       const text = `🔔 *BANTUAN: REMINDER*
 Pengingat umum (Jadwal, Zoom, Kas).
 
 ╭── [ *Perintah Reminder* ]
+│ Gunakan Koma ( , ) untuk ADD.
 │
 ├ \`#list-reminder\`
 │ Lihat antrean pengingat.
 │
-├ \`#reminder-ai [Teks Natural]\`
-│ Buat pengingat pintar (Support ulang).
-│ Contoh: \`#reminder-ai ingetin makan tiap jam 12\`
-│
-├ \`#reminder [Pesan] | [Waktu]\`
+├ \`#reminder [Pesan], [Waktu]\`
 │ Manual. Format: YYYY-MM-DD HH:mm.
 │
-├ \`#reminder [Pesan] | [Start] | [Interval] | [End]\`
+├ \`#reminder [Pesan], [Start], [Interval], [End]\`
 │ Manual Berulang (5m, 1h, 1d).
+│ Contoh: \`#reminder Piket, 2025-11-20 07:00, 1d, 2025-11-25\`
 │
 ├ \`#edit-reminder [ID] [Opsi] [Nilai]\`
-│ Edit data reminder.
+│ Edit data reminder (Gunakan Spasi).
 │
 ╰ \`#delete-reminder [ID]\`
   Hapus pengingat.
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
     // ============================================================
-    // 8. SUB-MENU: MEMBER & UTILS
+    // 8. SUB-MENU: MEMBER
     // ============================================================
     if (category === "member" || category === "util") {
       const text = `👥 *BANTUAN: MEMBER & UTILS*
 
-╭── [ *Member & Grup* ]
+╭── [ *AI Manager (Rekomendasi)* ]
+│
+╰ \`#member-ai [Instruksi/Foto]\`
+  "Tambah data dari foto ini"
+  "Ubah NIM 1 digit jadi 2 digit (tambah 0)"
+  "Hapus Budi, ganti nama Siti jadi Siti Aminah"
+
+╭── [ *Manual* ]
 │
 ├ \`#list-member\`
 │ Cek data mahasiswa.
-├ \`#add-member [NIM] | [Nama] | [Panggilan]\`
-│ Tambah manual (Bisa banyak baris).
-├ \`#add-member-ai [Foto/Teks]\`
-│ Tambah via Foto Absen/List.
-├ \`#edit-member [3DigitNIM] [Opsi] [Nilai]\`
-│ Edit data.
-├ \`#delete-member [3DigitNIM] ...\`
-│ Hapus member (Bisa banyak).
+├ \`#add-member\`
+│ Input banyak: NIM, Nama, Panggilan (Koma).
+├ \`#edit-member [NIM] [Opsi] [Nilai]\`
+│ Edit data (Gunakan Spasi).
+├ \`#delete-member [NIM]\`
+│ Hapus member.
 ├ \`#randomgrup [Jml] [Judul]\`
 │ Acak kelompok.
-╰ \`#list-grup\` / \`#detail-grup\`
 
-╭── [ *Utilitas Lain* ]
-│
-├ \`#stiker\` (Caption di gambar/video)
-╰ \`#tag-all\` (Mention semua member)
-
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
     
     // ============================================================
-    // 9. SUB-MENU: FUN & AI
+    // 9. SUB-MENU: FUN (AI & EDUKASI)
     // ============================================================
-    if (category === "fun" || category === "seru") {
-      const text = `🎲 *BANTUAN: FUN & AI*
-Fitur hiburan pemecah suasana.
+    if (category === "fun" || category === "seru" || category === "ai") {
+      const text = `🤖 *BANTUAN: AI & EDUKASI*
 
-╭── [ *Fun Tools* ]
+╭── [ *🎓 Asisten Belajar* ]
 │
-├ \`#kerang-ajaib [Pertanyaan]\`
-│ Ramalan AI (Savage/Sarkas Mode).
+├ \`#tanya-dosen [Pertanyaan]\`
+│ Chat dengan AI mode Dosen (Agak killer tapi pintar).
 │
-├ \`#diagnosa [@tag]\`
-│ Cek penyakit ngawur (AI Roleplay).
+╰ \`#jelaskan [Materi/Topik]\`
+  Minta penjelasan materi kuliah yang rumit jadi simpel.
+
+╭── [ *🎲 Hiburan & Games* ]
 │
-├ \`#roasting [@tag]\`
-│ Minta AI me-roasting teman.
+├ \`#pantun [Topik]\`
+│ Buat pantun lucu otomatis.
 │
 ├ \`#siapa [Pertanyaan]\`
-│ Menuduh member secara acak.
+│ Menuduh member grup secara acak.
 │
-╰ \`#pantun [Topik]\`
-  Membuat pantun lucu.
+╰ \`#kerang-ajaib [Pertanyaan]\`
+  Ramalan ajaib (Ya/Tidak/Mungkin).
 
-_Ketik_ \`#help\` _untuk kembali ke menu utama._`;
+_Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
 
@@ -279,7 +274,7 @@ Silahkan pilih kategori bantuan di bawah ini:
 │ 🌐 Cara pisah Grup Bot & Grup Utama.
 │
 ├ \`#help tugas\`
-│ 📝 Input Tugas (AI/Gambar), List Deadline.
+│ 📝 Input Tugas (AI/Gambar), Prioritas.
 │
 ├ \`#help reminder\`
 │ 🔔 Pengingat Umum (Sekali/Berulang).
@@ -288,15 +283,13 @@ Silahkan pilih kategori bantuan di bawah ini:
 │ 📅 Ganti Semester, Tambah Semester.
 │
 ├ \`#help mapel\`
-│ 📚 Tambah (AI), Edit, Hapus Mata Kuliah.
+│ 📚 Tambah, Edit, Hapus Mata Kuliah.
 │
 ├ \`#help member\`
 │ 👥 Absensi Siswa, Acak Kelompok.
 │
 ╰ \`#help fun\`
-  🎲 Fitur Seru-seruan.
-
-_💡 Tips: Ketik perintah sesuai yang tertera untuk melihat detail cara penggunaannya._
+  🎲 Fitur AI, Dosen Bot, & Games.
 
 ──────────────
 *Created by Luqman Oy Oy*`;

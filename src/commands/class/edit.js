@@ -1,188 +1,76 @@
-const fs = require('fs');
-const path = require('path');
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-
-// Direktori tempat file tugas disimpan
-const MEDIA_DIR = path.join(process.cwd(), 'media_tasks');
-
+// src/commands/kelas/edit-class.js
 module.exports = {
-  name: "#edit-task",
-  description: "Edit tugas. Format: #edit-task [ID] [judul/deadline/status/link/attachment/tipe] [Value]",
+  name: "#edit-class",
+  description: "Ubah info kelas. Format: #edit-class [Field], [Value]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
-    
-    // 1. Validasi Input
-    if (args.length < 3) {
+
+    // 1. Cek Eksistensi Kelas
+    const existingClass = await bot.db.prisma.class.findFirst({
+      where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+    });
+
+    if (!existingClass) return bot.sock.sendMessage(from, { text: "❌ Grup ini belum terdaftar sebagai kelas." });
+
+    // 2. Parsing Input (Menggunakan Koma)
+    const rawContent = text.replace("#edit-class", "").trim();
+    const parts = rawContent.split(",").map(p => p.trim());
+
+    if (parts.length < 2) {
         return bot.sock.sendMessage(from, { 
-            text: "⚠️ Format Salah!\nContoh:\n`#edit-task 15 judul Makalah Sejarah`\n`#edit-task 15 tipe kelompok`\n`#edit-task 15 deadline 2025-12-31 15:00`\n`#edit-task 15 attachment clear`" 
+            text: `⚠️ *Format Edit Kelas*\n\nContoh:\n\`#edit-class nama, Sistem Informasi B\`\n\`#edit-class deskripsi, Grup Resmi Angkatan 24\`` 
         });
     }
 
-    const taskId = parseInt(args[0]);
-    const field = args[1].toLowerCase();
-    const newValue = args.slice(2).join(" ");
+    const field = parts[0].toLowerCase();
+    const newValue = parts.slice(1).join(",").trim();
 
-    if (isNaN(taskId)) return bot.sock.sendMessage(from, { text: "❌ ID harus berupa angka." });
+    let updateData = {};
+    let displayField = "";
+    let oldValue = "";
 
-    // Validasi Field yang diperbolehkan (termasuk 'tipe' untuk isGroupTask)
-    if (!["judul", "deadline", "status", "link", "attachment", "tipe"].includes(field)) {
-        return bot.sock.sendMessage(from, { text: "❌ Field salah. Pilih: judul, deadline, status, link, attachment, atau tipe." });
+    // 3. Tentukan Field & Simpan Nilai Lama (Untuk Perbandingan)
+    if (["nama", "name"].includes(field)) {
+        updateData.name = newValue;
+        displayField = "🏷️ NAMA KELAS";
+        oldValue = existingClass.name;
+    } else if (["deskripsi", "desc", "description"].includes(field)) {
+        updateData.description = newValue;
+        displayField = "📝 DESKRIPSI";
+        oldValue = existingClass.description || "(Kosong)";
+    } else {
+        return bot.sock.sendMessage(from, { text: "❌ Field salah. Pilih: 'nama' atau 'deskripsi'." });
     }
-
-    // --- 2. LOGIKA DOWNLOAD MEDIA BARU (JIKA ADA) ---
-    const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
-    let newAttachmentData = null;
-
-    // Hanya jalankan jika field attachment dan user minta 'new' sambil reply pesan
-    if (field === "attachment" && newValue.toLowerCase() === "new" && quotedContext && quotedContext.quotedMessage) {
-        const mediaKeys = ['imageMessage', 'videoMessage', 'documentMessage'];
-        const mediaType = mediaKeys.find(key => quotedContext.quotedMessage[key]);
-        
-        if (mediaType) {
-             try {
-                const mediaMessage = quotedContext.quotedMessage[mediaType];
-                
-                // Objek pesan untuk downloadMediaMessage
-                const quotedMsgObject = { 
-                    key: { 
-                        remoteJid: from, 
-                        id: quotedContext.stanzaId, 
-                        participant: quotedContext.participant 
-                    }, 
-                    message: quotedContext.quotedMessage 
-                };
-
-                const stream = await downloadMediaMessage(quotedMsgObject, 'buffer', {});
-                
-                const extension = mediaMessage.mimetype.split('/')[1] || 'bin';
-                const timestamp = Date.now();
-                const fileName = `${timestamp}_${mediaMessage.fileSha256?.toString('hex').substring(0, 8) || 'edit'}.${extension}`;
-                const localFilePath = path.join(MEDIA_DIR, fileName);
-                
-                // Simpan file baru ke disk
-                fs.writeFileSync(localFilePath, stream);
-                
-                // Siapkan metadata baru
-                newAttachmentData = JSON.stringify({
-                    type: mediaType, 
-                    mimetype: mediaMessage.mimetype, 
-                    localFilePath: localFilePath 
-                });
-
-             } catch (e) { 
-                 console.error("Gagal download file edit:", e);
-                 return bot.sock.sendMessage(from, { text: "❌ Gagal download file baru. Pastikan file belum kadaluarsa." }); 
-             }
-        } else {
-            return bot.sock.sendMessage(from, { text: "⚠️ Pesan yang di-reply tidak mengandung media yang didukung." });
-        }
-    }
-    // --- END DOWNLOAD MEDIA ---
 
     try {
-        // 3. Cek Task & Validasi Grup (Dual Group Check)
-        const task = await bot.db.prisma.task.findFirst({
-            where: { 
-                id: taskId, 
-                class: { 
-                    OR: [
-                        { mainGroupId: from }, 
-                        { inputGroupId: from }
-                    ] 
-                } 
-            }
-        });
-
-        if (!task) return bot.sock.sendMessage(from, { text: "❌ Tugas tidak ditemukan di kelas ini." });
-
-        // 4. Logic Update Berdasarkan Field
-        let updateData = {};
-        let displayValue = newValue;
-
-        if (field === "deadline") {
-            // Parsing Tanggal dengan WIB forced
-            const isoStart = newValue.replace(" ", "T") + ":00+07:00"; 
-            const date = new Date(isoStart);
-            
-            if (isNaN(date.getTime())) return bot.sock.sendMessage(from, { text: "❌ Format tanggal salah. Gunakan YYYY-MM-DD HH:mm." });
-            
-            updateData.deadline = date;
-            displayValue = date.toLocaleString("id-ID", { dateStyle: 'medium', timeStyle: 'short' });
-        
-        } else if (field === "status") {
-            const lowerVal = newValue.toLowerCase();
-            if (["done", "selesai", "sudah"].includes(lowerVal)) {
-                updateData.status = "Selesai";
-            } else if (["pending", "belum", "terlewat"].includes(lowerVal)) { 
-                updateData.status = "Pending";
-            } else {
-                return bot.sock.sendMessage(from, { text: "❌ Status hanya: 'Pending' atau 'Selesai'." });
-            }
-            displayValue = updateData.status;
-        
-        } else if (field === "tipe") { // LOGIC BARU: isGroupTask
-            const lowerVal = newValue.toLowerCase();
-            if (["kelompok", "group", "grup"].includes(lowerVal)) {
-                updateData.isGroupTask = true;
-                displayValue = "KELOMPOK 👥";
-            } else if (["individu", "personal", "sendiri"].includes(lowerVal)) {
-                updateData.isGroupTask = false;
-                displayValue = "INDIVIDU 👤";
-            } else {
-                return bot.sock.sendMessage(from, { text: "❌ Tipe salah. Pilih 'kelompok' atau 'individu'." });
-            }
-
-        } else if (field === "attachment") {
-             // Opsi 1: Hapus Lampiran
-             if (newValue.toLowerCase() === "clear" || newValue === "-") {
-                if (task.attachmentData) { 
-                    try { 
-                        const attach = JSON.parse(task.attachmentData); 
-                        if(attach.localFilePath && fs.existsSync(attach.localFilePath)) {
-                            fs.unlinkSync(attach.localFilePath); // Hapus Fisik Lama
-                        }
-                    } catch(e){ console.error("Gagal hapus file lama:", e); } 
-                }
-                updateData.attachmentData = null; 
-                displayValue = "DIHAPUS";
-             
-             // Opsi 2: Ganti Lampiran (Memerlukan logic download di atas sukses)
-             } else if (newValue.toLowerCase() === "new" && newAttachmentData) {
-                if (task.attachmentData) { 
-                    try { 
-                        const attach = JSON.parse(task.attachmentData); 
-                        if(attach.localFilePath && fs.existsSync(attach.localFilePath)) {
-                            fs.unlinkSync(attach.localFilePath); // Hapus Fisik Lama
-                        }
-                    } catch(e){ console.error("Gagal hapus file lama:", e); } 
-                }
-                updateData.attachmentData = newAttachmentData;
-                displayValue = "DIGANTI BARU";
-             
-             } else {
-                 return bot.sock.sendMessage(from, { text: "⚠️ Pilihan salah. Gunakan 'clear' atau reply media dengan mengetik 'new'." });
-             }
-        
-        } else {
-            // Default String Update (Judul & Link)
-            updateData[field] = newValue;
-        }
-
-        // 5. Eksekusi Update Database
-        await bot.db.prisma.task.update({
-            where: { id: taskId },
+        // 4. Update Database
+        await bot.db.prisma.class.update({
+            where: { id: existingClass.id },
             data: updateData
         });
 
-        // 6. Kirim Konfirmasi
-        await bot.sock.sendMessage(from, {
-            text: `✏️ *TUGAS DIUPDATE*\n\n📚 Mapel: ${task.mapel}\n🔧 Bagian: ${field.toUpperCase()}\n📝 Menjadi: *${displayValue}*\n\nDiupdate oleh: @${sender.split("@")[0]}`,
+        // 5. Respon Keren (Change Log Style)
+        let reply = `✨ *CLASS DATA UPDATED* ✨\n`;
+        reply += `──────────────────────\n`;
+        // Tampilkan nama kelas (jika nama yang diedit, tampilkan yang baru)
+        reply += `🏫 Kelas: *${updateData.name || existingClass.name}*\n\n`;
+        
+        reply += `🔄 *Rincian Perubahan:*\n`;
+        reply += `📂 Bagian: ${displayField}\n`;
+        reply += `🔻 Semula: _${oldValue}_\n`;
+        reply += `✅ Menjadi: *${newValue}*\n`;
+        
+        reply += `──────────────────────\n`;
+        reply += `👤 _Diupdate oleh: @${sender.split("@")[0]}_`;
+
+        await bot.sock.sendMessage(from, { 
+            text: reply,
             mentions: [sender]
         });
 
     } catch (e) {
-        console.error(e);
-        await bot.sock.sendMessage(from, { text: "❌ Gagal update tugas." });
+        console.error("Error edit-class:", e);
+        await bot.sock.sendMessage(from, { text: "❌ Terjadi kesalahan saat mengupdate data." });
     }
   }
 };

@@ -1,16 +1,18 @@
+// src/commands/mapel/list.js
 module.exports = {
   name: "#list-mapel",
-  description: "Lihat daftar mapel di semester aktif.",
+  description: "Lihat daftar mata kuliah semester aktif.",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
 
     try {
+      // 1. Ambil Data Kelas & Mapel di Semester Aktif
       const kelas = await bot.db.prisma.class.findFirst({
         where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
         include: {
           semesters: {
             where: { isActive: true },
-            include: { subjects: { orderBy: { name: 'asc' } } }
+            include: { subjects: { orderBy: { name: 'asc' } } } // Urut Abjad A-Z
           }
         }
       });
@@ -18,31 +20,39 @@ module.exports = {
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
       
       const activeSem = kelas.semesters[0];
-      if (!activeSem) return bot.sock.sendMessage(from, { text: "❌ Belum ada Semester Aktif." });
-
-      const subjects = activeSem.subjects;
-      if (subjects.length === 0) return bot.sock.sendMessage(from, { text: `📂 Belum ada mapel di *${activeSem.name}*.` });
-
-      // --- FORMAT TAMPILAN BARU ---
-      let text = `📚 *MATA KULIAH KELAS*\n`;
-      text += `🏫 *${kelas.name}*\n`;
-      text += `📅 ${activeSem.name}\n`;
-      text += `──────────────────────\n`;
-      
-      subjects.forEach((sub) => {
-        // Menggunakan bullet point buku dan indentasi untuk ID
-        text += `📘 *${sub.name}*\n`;
-        text += `   └ 🆔 ID: \`${sub.id}\`\n`; 
+      if (!activeSem) return bot.sock.sendMessage(from, { 
+          text: "❌ Belum ada Semester Aktif.\nGunakan `#list-semester` untuk cek status." 
       });
 
+      const subjects = activeSem.subjects;
+      if (subjects.length === 0) return bot.sock.sendMessage(from, { 
+          text: `📂 Belum ada mapel di *${activeSem.name}*.\nGunakan \`#add-mapel\` untuk menambah.` 
+      });
+
+      // 2. Format Tampilan Keren
+      let text = `📚 *DAFTAR MATA KULIAH*\n`;
+      text += `🏫 Kelas: ${kelas.name}\n`;
+      text += `📅 Semester: *${activeSem.name}*\n`;
+      text += `📊 Total: ${subjects.length} Matkul\n`;
       text += `──────────────────────\n`;
-      text += `💡 *Edit:* \`#edit-mapel [ID] | [Nama]\`\n`;
-      text += `💡 *Hapus:* \`#delete-mapel [ID]\``;
+      
+      subjects.forEach((sub, index) => {
+        // Penomoran biar mudah dibaca
+        const num = index + 1;
+        text += `${num}. 📘 *${sub.name}*\n`;
+        text += `    🆔 ID: \`${sub.id}\`\n`; // Indentasi ID agar menjorok
+      });
+
+      // 3. Footer Actions (Konsisten Koma)
+      text += `──────────────────────\n`;
+      text += `💡 *Kelola Mapel:*\n`;
+      text += `• Edit: \`#edit-mapel [ID] [NamaBaru]\`\n`;
+      text += `• Hapus: \`#delete-mapel [ID]\``;
       
       await bot.sock.sendMessage(from, { text });
 
     } catch (e) {   
-      console.error(e);
+      console.error("Error list-mapel:", e);
       await bot.sock.sendMessage(from, { text: "❌ Terjadi kesalahan database." });
     }
   }

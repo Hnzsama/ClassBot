@@ -1,81 +1,119 @@
 // src/commands/mapel/addAi.js
-
-// Import fungsi penyimpanan dari file manual (asumsi: tersedia)
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { addSubjectsToDb } = require("./add");
 
 module.exports = {
   name: "#add-mapel-ai",
-  description: "Tambah mapel (AI support). Format: #add-mapel-ai [Deskripsi]",
+  description: "Tambah mapel via AI (Teks/Foto).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model, db } = bot;
 
     if (!from.endsWith("@g.us")) return;
-    const namaMapelInput = text.replace("#add-mapel-ai", "").trim();
-    if (!namaMapelInput) {
-      return bot.sock.sendMessage(from, { text: "⚠️ Masukkan deskripsi mata kuliah yang ingin dibuat.\nContoh: `#add-mapel-ai semua matkul wajib semester 3`" });
-    }
-    if (!model) {
-      return sock.sendMessage(from, { text: "❌ Fitur AI tidak aktif. Gunakan #add-mapel untuk input manual." });
+    
+    const rawInput = text.replace("#add-mapel-ai", "").trim();
+    
+    // --- 1. DETEKSI GAMBAR (VISION) ---
+    const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
+    let imagePart = null;
+    let hasImage = false;
+
+    if (quotedContext && quotedContext.quotedMessage?.imageMessage) {
+        try {
+            const buffer = await downloadMediaMessage(
+                {
+                    key: { remoteJid: from, id: quotedContext.stanzaId, participant: quotedContext.participant },
+                    message: quotedContext.quotedMessage
+                },
+                'buffer',
+                {}
+            );
+            
+            imagePart = {
+                inlineData: {
+                    data: buffer.toString("base64"),
+                    mimeType: "image/jpeg"
+                }
+            };
+            hasImage = true;
+        } catch (e) {
+            console.error("Gagal download gambar:", e);
+            return sock.sendMessage(from, { text: "❌ Gagal mengunduh gambar. Coba kirim ulang gambarnya." });
+        }
     }
 
+    // Validasi Input
+    if (!rawInput && !hasImage) {
+      return bot.sock.sendMessage(from, { 
+          text: "⚠️ *AI MAPEL SCANNER*\n\nFitur ini bisa membaca *Foto Jadwal/KRS* atau *List Teks*.\n\n📸 *Cara Pakai (Foto):*\n1. Kirim/Reply foto jadwal.\n2. Ketik `#add-mapel-ai`\n\n📝 *Cara Pakai (Teks):*\nKetik `#add-mapel-ai mapel semester 1 IT`" 
+      });
+    }
+
+    if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI belum diaktifkan oleh Admin Bot." });
+
     try {
-      // 1. Setup Awal (Cek Kelas)
-      // FIX KRUSIAL: Mengganti findUnique({ groupId: ... }) dengan findFirst({ OR: [mainGroupId, inputGroupId] })
+      // --- 2. SETUP KELAS ---
       const kelas = await db.prisma.class.findFirst({
-        where: { 
-          OR: [
-            { mainGroupId: from },
-            { inputGroupId: from }
-          ]
-        },
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
         include: { semesters: { where: { isActive: true } } }
       });
 
       if (!kelas || kelas.semesters.length === 0) {
-        return bot.sock.sendMessage(from, { text: "❌ Tidak ada Semester Aktif. Pastikan kelas sudah di-setup." });
+        return bot.sock.sendMessage(from, { text: "❌ Tidak ada Semester Aktif. Silahkan setup semester dulu." });
       }
       const activeSem = kelas.semesters[0];
 
-      // 2. Panggil AI
-      await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
+      // React Loading
+      await sock.sendMessage(from, { react: { text: "👀", key: msg.key } });
 
-      const prompt = `
-      Anda adalah Task Extractor. Tugas Anda adalah MENGHASILKAN daftar mata kuliah (subjects) dari deskripsi berikut.
-      Deskripsi: "${namaMapelInput}"
-      🛑 INSTRUKSI OUTPUT SANGAT KETAT:
-      1. Outputkan HANYA DAN HANYA daftar nama mata kuliah dalam format JSON array of strings.
-      2. Jangan sertakan teks penjelasan, simbol, atau nomor urut di luar format JSON.
-      3. Contoh output yang valid: ["Nama Mata Kuliah 1", "Nama Mata Kuliah 2"]
+      // --- 3. SYSTEM PROMPT ---
+      const systemPrompt = `
+      Peran: Asisten Administrasi Akademik.
+      Tugas: Ekstrak/Generate daftar Nama Mata Kuliah (Subjects) dari input user.
+
+      Instruksi:
+      1. JIKA GAMBAR: Lakukan OCR, cari kolom "Mata Kuliah/Subject". Abaikan kode/dosen.
+      2. JIKA LIST TEKS: Bersihkan simbol, ambil intinya.
+      3. JIKA TOPIK: Sarankan mata kuliah yang relevan.
+
+      OUTPUT WAJIB: JSON Array of Strings. Tanpa Markdown.
+      Contoh: ["Matematika", "Fisika Dasar"]
       `;
 
-      const result = await model.generateContent(prompt);
-      // FIX: Menggunakan .text() method dan pembersihan agresif
-      let jsonText = result.response.text()
-        .trim()
-        .replace(/```json|```/g, "") // Hapus wrapper markdown
-        .trim();
-      
-      let generatedNames;
+      let parts = [];
+      if (hasImage) {
+          parts = [ systemPrompt, { text: `Input User: "${rawInput}"` }, imagePart ];
+      } else {
+          parts = [ systemPrompt, { text: `Input User: "${rawInput}"` } ];
+      }
+
+      // --- 4. EKSEKUSI AI ---
+      const result = await model.generateContent(parts);
+      const aiResponse = result.response.text();
+
+      // --- 5. PARSING JSON ---
+      let generatedNames = [];
       try {
-        generatedNames = JSON.parse(jsonText);
+        const jsonMatch = aiResponse.match(/\[.*?\]/s); 
+        if (!jsonMatch) throw new Error("JSON Array not found");
+        generatedNames = JSON.parse(jsonMatch[0]);
       } catch (parseError) {
-        console.error("JSON Parse Error on AI response:", jsonText); // Log raw output for further inspection
-        return sock.sendMessage(from, { text: "❌ AI gagal. Hasil tidak valid. Coba input yang lebih singkat/jelas." });
+        console.error("AI Parse Error:", aiResponse);
+        return sock.sendMessage(from, { 
+            text: "❌ *AI BINGUNG*\n\nGagal membaca data mata kuliah. Pastikan gambar tulisan jelas atau teks input lebih spesifik." 
+        });
       }
 
-      // Pastikan hasil parse adalah array dan tidak kosong
       if (!Array.isArray(generatedNames) || generatedNames.length === 0) {
-        return sock.sendMessage(from, { text: "❌ AI gagal menghasilkan daftar mata kuliah yang valid." });
+        return sock.sendMessage(from, { text: "📂 AI tidak menemukan nama mata kuliah apapun dari input tersebut." });
       }
 
-      // 3. Lanjut ke logic penyimpanan (di file add.js)
-      // Kita asumsikan addSubjectsToDb dapat menangani array of strings
+      // --- 6. SIMPAN (Panggil fungsi manual) ---
+      // Fungsi addSubjectsToDb akan mengirimkan respon sukses yang sudah kita styling sebelumnya
       return addSubjectsToDb(bot, from, sender, generatedNames, activeSem.id, kelas.name, true);
 
     } catch (e) {
-      console.error("AI Add Subject Error:", e);
-      // Feedback lebih jelas
-      await bot.sock.sendMessage(from, { text: "❌ Gagal menghubungi AI atau terjadi error umum. Coba lagi." });
+      console.error("AI Mapel Error:", e);
+      await bot.sock.sendMessage(from, { text: "❌ Terjadi kesalahan sistem AI." });
     }
   }
 };

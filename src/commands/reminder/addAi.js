@@ -20,7 +20,7 @@ const validateInterval = (intervalStr) => {
 
 module.exports = {
   name: "#reminder-ai",
-  description: "Pasang pengingat pintar via AI (Support Repeatable Logic).",
+  description: "Pasang pengingat pintar via AI (Support Repeatable & Mentions).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model, db } = bot;
 
@@ -34,24 +34,20 @@ module.exports = {
       return sock.sendMessage(from, { text: "❌ Fitur AI tidak aktif." });
     }
 
-    // --- FIX KRUSIAL: Dual Group Check ---
+    // --- 1. AMBIL MENTIONS ---
+    const contextInfo = msg.message?.extendedTextMessage?.contextInfo || {};
+    const mentionedJids = contextInfo.mentionedJid || contextInfo.mentions || [];
+    const targetMembers = mentionedJids.length > 0 ? mentionedJids.join(",") : null;
+
     const kelas = await db.prisma.class.findFirst({
-        where: { 
-          OR: [
-            { mainGroupId: from },
-            { inputGroupId: from }
-          ]
-        }
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
     });
     
     if (!kelas) return sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
-    // -------------------------------------
-
+    
     try {
       await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
 
-      const validIntervals = ['1m', '5m', '15m', '30m', '1h', '3h', '6h', '1d'];
-      
       const options = { timeZone: 'Asia/Jakarta', hour12: false };
       const now = new Date();
       
@@ -66,27 +62,28 @@ module.exports = {
       
       const dateContextIndo = `${currentParts.weekday}, ${currentParts.day}-${currentParts.month}-${currentParts.year}`;
 
+      // --- 2. UPDATE PROMPT AGAR BERSIH DARI MENTIONS ---
       const systemPrompt = `
-      Anda adalah Reminder Extractor. Tugas Anda adalah menganalisis input user dan mengekstrak detailnya ke format JSON.
+      Anda adalah Reminder Extractor. Tugas: Analisis input user -> JSON.
+      Waktu Sekarang (WIB): ${dateContextIndo} Jam ${currentParts.hour}:${currentParts.minute}
       
-      Konteks Waktu Saat Ini (WIB): ${dateContextIndo} Jam ${currentParts.hour}:${currentParts.minute}
-      
-      Aturan Output:
-      1. WaktuMulai: WAJIB dihitung ke 'YYYY-MM-DD HH:mm'. Waktu ini HARUS di masa depan.
-      2. Deteksi Pengulangan: Jika user meminta pengulangan, setel 'repeatInterval' (Format: angka+unit 'm/h/d'). Contoh: '1d', '3h', '10m'.
-      3. RepeatUntil: WAJIB dihitung ke 'YYYY-MM-DD HH:mm'. Gunakan null jika tidak disebutkan.
+      Aturan Ekstraksi:
+      1. WaktuMulai: 'YYYY-MM-DD HH:mm'. Harus masa depan.
+      2. RepeatInterval: Format '1m', '5h', '1d'. (Opsional)
+      3. RepeatUntil: 'YYYY-MM-DD HH:mm'. (Opsional)
+      4. Pesan: Ambil inti pesannya saja.
+         PENTING: JANGAN masukkan kata-kata rujukan target seperti "untuk @User", "ke @User", "tag @User" ke dalam field 'pesan', karena sistem sudah menangani tagging secara terpisah. Bersihkan pesan dari mention.
 
-      Input User: "${requestText}"
+      Input: "${requestText}"
 
       Contoh Output JSON:
-      { "pesan": "Isi pesan inti", "waktuMulai": "YYYY-MM-DD HH:mm", "repeatInterval": "1h", "repeatUntil": "2025-11-23 18:00" }
+      { "pesan": "Bawa buku sejarah", "waktuMulai": "2025-11-23 07:00", "repeatInterval": "1h" }
       `;
 
       const contents = [{ role: "user", parts: [{ text: systemPrompt }] }];
       const result = await model.generateContent({ contents });
       
       let jsonString = result.response.text().trim().replace(/```json|```/g, "").trim();
-      
       const firstBracket = jsonString.indexOf("[");
       const lastBracket = jsonString.lastIndexOf("]");
 
@@ -134,6 +131,7 @@ module.exports = {
               } else { repeatInterval = null; }
           }
 
+          // Simpan ke DB (Sender simpan nomornya saja)
           await db.prisma.reminder.create({
             data: {
               pesan: data.pesan,
@@ -141,7 +139,8 @@ module.exports = {
               classId: kelas.id,
               sender: sender.split("@")[0],
               repeatInterval: repeatInterval,
-              repeatUntil: repeatUntil
+              repeatUntil: repeatUntil,
+              targetMembers: targetMembers 
             }
           });
 
@@ -153,10 +152,26 @@ module.exports = {
           successCount++;
       }
 
+      // --- 3. LOGIKA DISPLAY TAGGING ---
       if (successCount > 0) {
           let header = `✨ *${successCount} JADWAL DISIMPAN* ✨`;
+          let mentionsToReply = [sender]; // Sender pasti ditag di reply konfirmasi
+
+          if (targetMembers) {
+             const targets = targetMembers.split(",");
+             // Gabungkan target ke array mentions agar nama mereka muncul biru
+             mentionsToReply = mentionsToReply.concat(targets);
+             
+             // Format tampilan text: @628xxx, @628xxx
+             const formattedTags = targets.map(id => `@${id.split('@')[0]}`).join(", ");
+             header += `\n👥 *Tagging:* ${formattedTags}`;
+          } else {
+             header += `\n👥 *Tagging:* Semua Member`;
+          }
+
           await sock.sendMessage(from, {
-              text: `${header}\n\n${summaryText}`
+              text: `${header}\n\n${summaryText}`,
+              mentions: mentionsToReply // PENTING: Masukkan list JID ke sini
           });
       } else {
           await sock.sendMessage(from, { text: "❌ Gagal. Waktu yang diminta sudah terlewat atau tidak dikenali." });

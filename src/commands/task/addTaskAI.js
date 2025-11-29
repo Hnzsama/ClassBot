@@ -9,6 +9,7 @@ if (!fs.existsSync(MEDIA_DIR)) { fs.mkdirSync(MEDIA_DIR, { recursive: true }); }
 
 // Utility untuk parsing waktu WIB
 const parseWIB = (timeStr) => {
+    if (!timeStr) return null;
     const isoStart = timeStr.replace(" ", "T") + ":00+07:00"; 
     const date = new Date(isoStart);
     return isNaN(date.getTime()) ? null : date;
@@ -28,16 +29,15 @@ module.exports = {
     
     // --- DETEKSI MODE LAMPIRAN ---
     const isAttachmentMode = inputData.includes("--lampiran") || inputData.includes("--attach");
-    // Bersihkan flag dari teks input agar tidak membingungkan AI
     inputData = inputData.replace("--lampiran", "").replace("--attach", "").trim();
 
     let attachmentData = null;
     let mimeType = "text/plain";
-    let mediaBuffer = null; // Buffer untuk AI analysis (jika bukan lampiran)
+    let mediaBuffer = null; 
 
     const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
     
-    // 1. Deteksi Media (Gambar/Dokumen)
+    // 1. Deteksi Media
     if (quotedMsg) {
         const mediaKeys = ['imageMessage', 'videoMessage', 'documentMessage'];
         const mediaType = mediaKeys.find(key => quotedMsg[key]);
@@ -45,55 +45,53 @@ module.exports = {
         if (mediaType) {
              const mediaMessage = quotedMsg[mediaType];
              
-             // Download Media
-             const stream = await downloadMediaMessage(
-                { key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg },
-                'buffer',
-                {},
-                { reuploadRequest: sock.updateMediaMessage }
-            );
+             try {
+                 const stream = await downloadMediaMessage(
+                    { key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg },
+                    'buffer',
+                    {},
+                    { reuploadRequest: sock.updateMediaMessage }
+                );
 
-            // SKENARIO A: MODE LAMPIRAN (Simpan File, Jangan Kirim ke AI)
-            if (isAttachmentMode) {
-                const extension = mediaMessage.mimetype.split('/')[1] || 'bin';
-                const timestamp = Date.now();
-                const fileName = `${timestamp}_ai_${mediaMessage.fileSha256?.toString('hex').substring(0, 8)}.${extension}`;
-                const localFilePath = path.join(MEDIA_DIR, fileName);
-                
-                fs.writeFileSync(localFilePath, stream); // Simpan fisik
+                if (isAttachmentMode) {
+                    const extension = mediaMessage.mimetype.split('/')[1] || 'bin';
+                    const fName = `${Date.now()}_ai_${mediaMessage.fileSha256?.toString('hex').substring(0, 8)}.${extension}`;
+                    const localFilePath = path.join(MEDIA_DIR, fName);
+                    fs.writeFileSync(localFilePath, stream);
 
-                attachmentData = JSON.stringify({
-                    type: mediaType,
-                    mimetype: mediaMessage.mimetype,
-                    localFilePath: localFilePath, // Simpan path lokal
-                    mediaKey: mediaMessage.mediaKey?.toString('base64'),
-                    fileSha256: mediaMessage.fileSha256?.toString('base64'),
-                });
-            } 
-            // SKENARIO B: MODE ANALISIS AI (Kirim Buffer ke AI, Jangan Simpan Fisik)
-            else {
-                mediaBuffer = stream; // Simpan ke variabel untuk dikirim ke Gemini nanti
-                mimeType = mediaMessage.mimetype; // Simpan mimetype asli
-            }
+                    attachmentData = JSON.stringify({
+                        type: mediaType,
+                        mimetype: mediaMessage.mimetype,
+                        localFilePath: localFilePath,
+                        mediaKey: mediaMessage.mediaKey?.toString('base64'),
+                        fileSha256: mediaMessage.fileSha256?.toString('base64'),
+                    });
+                } else {
+                    mediaBuffer = stream; 
+                    mimeType = mediaMessage.mimetype; 
+                }
+             } catch (e) {
+                 return sock.sendMessage(from, { text: "❌ Gagal download media." });
+             }
         }
     } 
     
     if (inputData.length < 5 && !mediaBuffer) {
         return sock.sendMessage(from, { 
-            text: "⚠️ Beri deskripsi tugas atau reply gambar soal.\n\n*Tips:* Gunakan `--lampiran` jika gambar yang di-reply adalah file tugas, bukan soal untuk dibaca AI." 
+            text: "⚠️ *AI TASK SCANNNER*\n\nKirim deskripsi atau reply gambar soal.\n\n📝 *Contoh:* \"Tugas Matematika bab 3 deadline besok\"\n📎 *Lampiran:* Tambahkan `--lampiran` jika ingin menyimpan file yang di-reply." 
         });
     }
 
     try {
       await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
 
-      // 2. Ambil Kelas dan Subjects
+      // 2. Ambil Kelas
       const kelas = await db.prisma.class.findFirst({
         where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
         include: { semesters: { where: { isActive: true }, include: { subjects: { orderBy: { name: 'asc' } } } } }
       });
 
-      if (!kelas || kelas.semesters.length === 0) return sock.sendMessage(from, { text: "❌ Kelas/Semester belum siap." });
+      if (!kelas || kelas.semesters.length === 0) return sock.sendMessage(from, { text: "❌ Kelas belum siap (Mapel/Semester kosong)." });
       const subjectsList = kelas.semesters[0].subjects.map(s => s.name).join(", ");
       
       const todayWIB = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }).replace(/\//g, '-');
@@ -101,49 +99,54 @@ module.exports = {
 
       // 3. Prompting Gemini
       const systemPrompt = `
-      Anda adalah Task Extractor. Tugas Anda adalah menganalisis input dan mengekstrak detailnya ke format JSON.
+      Anda adalah Task Extractor. Tugas: Ekstrak detail tugas ke format JSON.
       
-      Aturan Ekstraksi:
-      - Mapel dari: [${subjectsList}].
-      - Hari Ini: ${todayWIB} WIB. TAHUN AKTIF: ${currentYear}.
-      - Deadline: YYYY-MM-DD HH:mm (Wajib ${currentYear}). Asumsikan 23:59 jika jam hilang.
-      - Tipe Tugas: Tentukan INDIVIDU (false) atau KELOMPOK (true).
-
-      Outputkan HANYA objek JSON.
-      { "mapel": "Nama Mapel", "judul": "Judul Tugas", "deadline": "YYYY-MM-DD HH:mm", "isGroupTask": true/false, "link": "URL Tugas atau '-'" }
+      Konteks:
+      - Mapel Valid: [${subjectsList}].
+      - Hari Ini: ${todayWIB}. Tahun: ${currentYear}.
+      - Deadline: YYYY-MM-DD HH:mm. (Jika user bilang "Besok", hitung tanggalnya).
+      
+      Output JSON Only:
+      { "mapel": "Nama Mapel", "judul": "Judul Tugas", "deadline": "YYYY-MM-DD HH:mm", "isGroupTask": true/false, "link": "URL/-" }
       `;
       
       const contentParts = [{ text: systemPrompt }];
 
-      // INJEKSI INPUT KE AI
       if (mediaBuffer) {
-          // Jika mode Analisis, kirim gambar ke AI
-          contentParts.push({ text: `Ekstrak tugas dari gambar ini.` });
+          contentParts.push({ text: `Ekstrak dari gambar ini.` });
           contentParts.push({ inlineData: { mimeType: mimeType, data: mediaBuffer.toString('base64') } });
-          if (inputData) contentParts.push({ text: `Catatan tambahan: ${inputData}` });
+          if (inputData) contentParts.push({ text: `Catatan: ${inputData}` });
       } else {
-          // Jika mode Teks (atau Lampiran), hanya kirim teks deskripsi
-          contentParts.push({ text: `Deskripsi Teks: ${inputData}` });
+          contentParts.push({ text: `Input: ${inputData}` });
       }
       
       const contents = [{ role: "user", parts: contentParts }];
-      
       const result = await model.generateContent({ contents });
-      let jsonText = result.response.text().trim().replace(/```json|```/g, "").trim();
-      const taskData = JSON.parse(jsonText);
+      
+      let jsonText = result.response.text().trim();
+      // Bersihkan markdown code block jika ada
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) jsonText = jsonMatch[0];
+      
+      let taskData;
+      try {
+          taskData = JSON.parse(jsonText);
+      } catch (e) {
+          return sock.sendMessage(from, { text: "❌ AI bingung membaca respon." });
+      }
 
       // 4. Validasi & Simpan
       let { mapel, judul, deadline, isGroupTask, link } = taskData;
       const parsedDeadline = parseWIB(deadline);
-      const finalMapel = subjectsList.split(',').map(s => s.trim()).find(s => mapel.toLowerCase().includes(s.toLowerCase()));
+      const finalMapel = subjectsList.split(',').map(s => s.trim()).find(s => mapel && s.toLowerCase().includes(mapel.toLowerCase()));
 
       const missingFields = [];
       if (!finalMapel) missingFields.push("mapel");
       if (!judul || judul === "-") missingFields.push("judul");
       if (!parsedDeadline) missingFields.push("deadline");
 
-      // Simpan Data (Sertakan attachmentData jika ada)
       if (missingFields.length === 0) {
+        // SIMPAN KE DATABASE
         const newTask = await db.prisma.task.create({
           data: {
             classId: kelas.id, 
@@ -152,14 +155,33 @@ module.exports = {
             deadline: parsedDeadline, 
             isGroupTask: isGroupTask, 
             link: link || "-", 
-            attachmentData: attachmentData, // <--- SIMPAN DATA LAMPIRAN (JIKA ADA)
+            attachmentData: attachmentData, 
           }
         });
         
-        let successText = `✨ *TUGAS TERSIMPAN VIA AI* ✨\n\n📚 Mapel: ${newTask.mapel}\n📅 Deadline: ${newTask.deadline.toLocaleString("id-ID")}\n`;
-        if (attachmentData) successText += `📎 _Lampiran tersimpan._\n`;
+        // --- RESPON SUKSES KEREN ---
+        const dateStr = newTask.deadline.toLocaleDateString("id-ID", { weekday: 'long', day: 'numeric', month: 'long' });
+        const timeStr = newTask.deadline.toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' });
+        const typeIcon = newTask.isGroupTask ? "👥 Kelompok" : "👤 Individu";
+
+        let reply = `🤖 *TUGAS BARU TERCATAT*\n`;
+        reply += `──────────────────────\n`;
+        reply += `📚 *${newTask.mapel}*\n`;
+        reply += `📝 "${newTask.judul}"\n`;
+        reply += `📅 ${dateStr} • ${timeStr} WIB\n`;
+        reply += `📌 Tipe: ${typeIcon}\n`;
         
-        return sock.sendMessage(from, { text: successText, mentions: [sender] });
+        if (newTask.link && newTask.link !== '-') {
+            reply += `🔗 Link: ${newTask.link}\n`;
+        }
+        if (attachmentData) {
+            reply += `📎 _Lampiran File Tersimpan_\n`;
+        }
+        
+        reply += `──────────────────────\n`;
+        reply += `💡 _Cek daftar: #list-task_`;
+        
+        return sock.sendMessage(from, { text: reply, mentions: [sender] });
 
       } else {
         // Fallback ke Sesi Interaktif
@@ -170,22 +192,22 @@ module.exports = {
           type: "ADD_TASK", groupId: from, classId: kelas.id,
           step: startStep, 
           data: { 
-            attachmentData, // Teruskan lampiran ke sesi manual
+            attachmentData, 
             mapel: finalMapel || null, judul, deadline: parsedDeadline, isGroupTask, link
           }
         });
 
         const listMapel = kelas.semesters[0].subjects.map((s, i) => `*${i + 1}.* ${s.name}`).join("\n");
         const promptText = missingFields.includes("mapel") 
-            ? `⚠️ AI bingung mapelnya. Pilih nomor:\n\n${listMapel}` 
-            : `⚠️ AI bingung judul/deadline. Input *JUDUL* tugas:`;
+            ? `⚠️ AI kurang yakin mapelnya. Pilih nomor manual:\n\n${listMapel}` 
+            : `⚠️ AI butuh detail Judul/Deadline. Ketik *JUDUL* tugas:`;
 
         await sock.sendMessage(from, { text: promptText });
       }
 
     } catch (e) {
       console.error("Error addTaskAI:", e);
-      await sock.sendMessage(from, { text: `❌ Gagal menyimpan tugas via AI. Error: ${e.message}` });
+      await sock.sendMessage(from, { text: `❌ Gagal proses AI. Error: ${e.message}` });
     }
   }
 };

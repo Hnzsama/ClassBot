@@ -7,72 +7,82 @@ module.exports = {
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
 
-    // 1. Parse Multiple IDs (Mengubah semua argumen menjadi angka)
+    // 1. Parse Multiple IDs
     const taskIds = args.map(arg => parseInt(arg)).filter(id => !isNaN(id) && id > 0);
 
     if (taskIds.length === 0) {
-        return bot.sock.sendMessage(from, { text: "⚠️ Masukkan setidaknya satu ID tugas yang valid (Angka). Contoh: `#delete-task 5 12 14`" });
+        return bot.sock.sendMessage(from, { 
+            text: "⚠️ *Format Salah*\n\nMasukkan ID tugas yang ingin dihapus (bisa banyak).\nContoh: `#delete-task 15 16`\n\n_(Cek ID di #list-task)_" 
+        });
     }
 
     try {
-        const kelas = await bot.db.prisma.class.findUnique({ where: { groupId: from } });
+        // 2. Cek Kelas (Dual Group Check)
+        const kelas = await bot.db.prisma.class.findFirst({
+            where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+        });
+        
         if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
-        const classId = kelas.id;
 
-        // 2. Ambil SEMUA tugas yang cocok dan milik kelas ini
+        // 3. Ambil data tugas yang mau dihapus (untuk laporan nama tugas)
         const tasksToDelete = await bot.db.prisma.task.findMany({
             where: { 
-                id: { in: taskIds }, // Filter by array of IDs
-                classId: classId 
+                id: { in: taskIds }, 
+                classId: kelas.id 
             }
         });
 
         if (tasksToDelete.length === 0) {
-            return bot.sock.sendMessage(from, { text: `❌ Tidak ditemukan tugas dengan ID: ${taskIds.join(', ')} di kelas ini.` });
+            return bot.sock.sendMessage(from, { text: `❌ Tidak ditemukan tugas dengan ID tersebut di kelas ini.` });
         }
         
-        let deletedCount = 0;
-        let successfulDeletions = [];
-        let failedDeletions = [];
+        const deletedLog = []; // Menyimpan judul tugas yang berhasil dihapus
+        const failedLog = [];
 
-        // 3. Sequential Deletion (File Fisik + DB Record untuk setiap tugas)
+        // 4. Sequential Deletion
         for (const task of tasksToDelete) {
-            
-            // A. Delete File Fisik
+            // A. Hapus File Fisik (Jika ada)
             if (task.attachmentData) {
                 try {
                     const attach = JSON.parse(task.attachmentData);
-                    const filePath = attach.localFilePath;
-                    
-                    if (filePath && fs.existsSync(filePath)) {
-                        fs.unlinkSync(filePath); 
+                    if (attach.localFilePath && fs.existsSync(attach.localFilePath)) {
+                        fs.unlinkSync(attach.localFilePath); 
                     }
                 } catch (e) {
-                    // Hanya log error file, tidak membatalkan delete DB
-                    console.error(`[DELETE] Gagal menghapus file untuk Task ${task.id}:`, e);
+                    console.error(`[DELETE-FILE] Error task ${task.id}:`, e);
                 }
             }
 
-            // B. Delete DB Record
+            // B. Hapus Database
             try {
                 await bot.db.prisma.task.delete({ where: { id: task.id } });
-                deletedCount++;
-                successfulDeletions.push(task.id);
+                deletedLog.push(`• ~${task.judul}~ (ID: ${task.id})`);
             } catch (e) {
-                // Jika database gagal delete (misal constraint), catat kegagalan
-                failedDeletions.push(task.id);
-                console.error(`[DELETE] Gagal menghapus DB record Task ${task.id}:`, e);
+                console.error(`[DELETE-DB] Error task ${task.id}:`, e);
+                failedLog.push(`ID ${task.id}`);
             }
         }
 
-        // 4. Kirim Info & TAG PELAKU (Summary Report)
-        let reply = `🗑️ *PENGHAPUSAN TUGAS SELESAI* 🗑️\n\n`;
-        reply += `✅ *Berhasil Dihapus:* ${deletedCount} tugas (IDs: ${successfulDeletions.join(', ')})\n`;
-        if (failedDeletions.length > 0) {
-            reply += `❌ *Gagal Dihapus:* ${failedDeletions.length} tugas (IDs: ${failedDeletions.join(', ')}). Cek log konsol.\n`;
+        // 5. Laporan Penghapusan Keren
+        let reply = `🗑️ *LAPORAN PENGHAPUSAN TUGAS*\n`;
+        reply += `──────────────────────\n`;
+        reply += `🏫 Kelas: ${kelas.name}\n`;
+        reply += `📊 Status: ${deletedLog.length} item dihapus\n\n`;
+
+        if (deletedLog.length > 0) {
+            reply += `✅ *Berhasil Dihapus:*\n`;
+            reply += deletedLog.join('\n');
+            reply += `\n`;
+        }
+
+        if (failedLog.length > 0) {
+            reply += `⛔ *Gagal Dihapus:*\n`;
+            reply += failedLog.join(', ');
+            reply += `\n`;
         }
         
-        reply += `\nOleh: @${sender.split("@")[0]}`;
+        reply += `──────────────────────\n`;
+        reply += `👤 Oleh: @${sender.split("@")[0]}`;
 
         await bot.sock.sendMessage(from, {
             text: reply,
@@ -80,8 +90,8 @@ module.exports = {
         });
 
     } catch (e) {
-        console.error("Error multi-delete:", e);
-        await bot.sock.sendMessage(from, { text: "❌ Terjadi kesalahan saat menghapus tugas." });
+        console.error("Error multi-delete task:", e);
+        await bot.sock.sendMessage(from, { text: "❌ Terjadi kesalahan sistem saat menghapus tugas." });
     }
   }
 };

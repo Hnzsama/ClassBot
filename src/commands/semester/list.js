@@ -6,10 +6,11 @@ module.exports = {
     if (!from.endsWith("@g.us")) return;
 
     try {
-      // 1. Cari Kelas & Validasi
+      // 1. Cari Kelas & Validasi (Dual Group Check)
       const kelas = await bot.db.prisma.class.findFirst({ 
           where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] } 
       });
+      
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Gunakan `#add-class`." });
 
       // 2. Query Semesters
@@ -23,30 +24,36 @@ module.exports = {
 
       if (semesters.length === 0) {
           return bot.sock.sendMessage(from, { 
-              text: `❌ Belum ada semester yang dibuat untuk kelas *${kelas.name}*.\nGunakan \`#add-semester-ai [Angka]\` untuk membuatnya otomatis.` 
+              text: `📂 *DATA KOSONG*\n\nBelum ada semester untuk kelas *${kelas.name}*.\nGunakan command tambah semester untuk memulai.` 
           });
       }
 
-      // 3. Format Output Keren
-      let text = `╭── 📅 *HISTORY SEMESTER*\n`;
-      text += `│ 🏫 Kelas: *${kelas.name}*\n`;
-      text += `╰──────────────────────\n`;
+      // 3. Format Output Estetik
+      let text = `🎓 *RIWAYAT SEMESTER*\n`;
+      text += `🏫 Kelas: ${kelas.name}\n`;
+      text += `📊 Total: ${semesters.length} Semester\n`;
+      text += `──────────────────────\n`;
 
       semesters.forEach((s) => {
-        const statusIcon = s.isActive ? "✅ AKTIF" : "⚪";
-        const activeStyle = s.isActive ? "*[SEDANG BERJALAN]*" : "";
+        const isAktif = s.isActive;
         
-        text += `\n${statusIcon} *${s.name}* ${activeStyle}\n`;
-        text += `   ├ 🆔 ID: \`${s.id}\`\n`; // Monospace ID
-        text += `   └ 📚 Mapel: ${s._count.subjects} mata kuliah\n`;
+        // Visual Logic
+        // Hijau & Bold jika aktif, Putih/Abu jika tidak
+        const icon = isAktif ? "🟢" : "⚪";
+        const nameDisplay = isAktif ? `*${s.name}* (SEMESTER AKTIF)` : s.name;
+        
+        text += `${icon} ${nameDisplay}\n`;
+        // Tampilkan ID (Monospace) dan Jumlah Mapel dalam satu baris rapi
+        // Note: Backslash sebelum backtick digunakan agar karakter ` muncul di WA
+        text += `   🆔 ID: \`${s.id}\`  •  📚 ${s._count.subjects} Mapel\n`;
+        text += `\n`; // Spasi antar item
       });
 
-      // 4. Quick Actions yang Lebih Lengkap
-      text += `\n──────────────────────\n`;
-      text += `💡 *Quick Action:*\n`;
-      text += `• Aktifkan: \`#edit-semester [ID] status 1\`\n`;
-      text += `• Hapus: \`#delete-semester [ID]\`\n`;
-      text += `• Tambah: \`#add-semester-ai [Angka]\``;
+      // 4. Footer Action (Konsisten dengan format koma)
+      text += `──────────────────────\n`;
+      text += `💡 *Ganti Semester Aktif:*\n`;
+      text += `Ketik: \`#edit-semester [ID] status 1\`\n`; 
+      text += `_(Contoh: #edit-semester 5 status 1)_`;
 
       await bot.sock.sendMessage(from, { text });
 

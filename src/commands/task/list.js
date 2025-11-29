@@ -30,7 +30,7 @@ module.exports = {
       
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
-      // Query Database
+      // 3. Query Database
       const query = {
         where: { classId: kelas.id },
         orderBy: { deadline: 'asc' }
@@ -51,6 +51,7 @@ module.exports = {
         return bot.sock.sendMessage(from, { text: `🎉 Tidak ada tugas dengan status: *${filterStatus}*` });
       }
 
+      // 4. Susun Tampilan (Box Style Preserved)
       let text = `📋 *DAFTAR TUGAS KELAS*\n`;
       text += `🏫 Kelas: *${kelas.name}*\n`;
       text += `status: ${titleStatus} | Total: ${tasks.length}\n`;
@@ -82,19 +83,28 @@ module.exports = {
 
         const attachmentIcon = t.attachmentData ? ' 📎' : '';
         const typeIcon = t.isGroupTask ? '👥' : '👤';
-        const linkDisplay = (t.link && t.link !== "-" && t.link.length > 1) ? `│ 🔗 ${t.link}\n` : "";
+        
+        // --- LOGIC LINK ---
+        // Jika ada link dan bukan "-", tampilkan baris link
+        const linkDisplay = (t.link && t.link !== "-" && t.link.length > 1) 
+            ? `│ 🔗 ${t.link}\n` 
+            : "";
 
+        // FORMAT TAMPILAN
         text += `╭── ${icon} *${t.mapel}* (${typeIcon})${attachmentIcon}\n`;
         text += `│ 📝 ${t.judul}\n`;
         text += `│ 📅 ${dateTimeStr} ${alert}\n`;
-        text += linkDisplay;
+        text += linkDisplay; // <--- Link Masuk Sini
         text += `╰ 🆔 ID: *${t.id}* | Status: _${t.status}_\n\n`;
       });
 
-      text += `💡 *Quick Action:*\n`;
+      // 5. Quick Action Updated
+      text += `💡 *Aksi Cepat:*\n`;
       text += `• Detail: \`#detail-task [ID]\`\n`;
       text += `• Selesai: \`#task-status [ID] done\`\n`;
-      text += `• Hapus: \`#delete-task [ID]\``;
+      text += `• Edit: \`#edit-task [ID] judul [Baru]\`\n`;
+      text += `• Hapus: \`#delete-task [ID]\`\n`;
+      text += `• Otomatis: \`#task-ai Hapus tugas ID 15\``;
 
       await bot.sock.sendMessage(from, { text });
 

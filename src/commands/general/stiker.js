@@ -1,150 +1,104 @@
 const { downloadContentFromMessage } = require("@whiskeysockets/baileys");
 const fs = require("fs");
 const { spawnSync } = require("child_process");
-const path = require("path"); // 1. Tambahkan 'path'
+const path = require("path");
 
 module.exports = {
   name: "#stiker",
-  description: "Membuat stiker dari gambar atau GIF",
+  description: "Membuat stiker (Transparan + Text Support).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock } = bot;
 
     let mediaMessage = null;
     let mediaType = null;
-    let quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-
+    
+    const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
     if (quoted) {
-      if (quoted.imageMessage) {
-        mediaMessage = quoted.imageMessage;
-        mediaType = "image";
-      } else if (quoted.videoMessage) {
-        mediaMessage = quoted.videoMessage;
-        mediaType = "video";
-      }
+      if (quoted.imageMessage) { mediaMessage = quoted.imageMessage; mediaType = "image"; } 
+      else if (quoted.videoMessage) { mediaMessage = quoted.videoMessage; mediaType = "video"; }
     } else {
-      if (msg.message?.imageMessage) {
-        mediaMessage = msg.message.imageMessage;
-        mediaType = "image";
-      } else if (msg.message?.videoMessage) {
-        mediaMessage = msg.message.videoMessage;
-        mediaType = "video";
-      }
+      if (msg.message?.imageMessage) { mediaMessage = msg.message.imageMessage; mediaType = "image"; } 
+      else if (msg.message?.videoMessage) { mediaMessage = msg.message.videoMessage; mediaType = "video"; }
     }
 
-    if (!mediaMessage) {
-      await sock.sendMessage(from, {
-        text: "❗ Kirim atau reply gambar/GIF dengan caption *#stiker* atau *#stiker [teks]*.",
-      });
-      return;
-    }
+    if (!mediaMessage) return await sock.sendMessage(from, { text: "❗ Kirim/Reply media dengan caption *#stiker*." });
+    if (mediaType === "video" && (mediaMessage.seconds > 10)) return await sock.sendMessage(from, { text: "❗ Video maks 10 detik." });
 
-    if (mediaType === "video" && (mediaMessage.seconds || 0) > 10) {
-      await sock.sendMessage(from, {
-        text: "❗ Video/GIF terlalu panjang. Maksimal 10 detik.",
-      });
-      return;
-    }
+    await sock.sendMessage(from, { text: "⏳ Sedang diproses..." }, { quoted: msg });
+
+    const timestamp = Date.now();
+    const inputExt = mediaType === "video" ? "mp4" : "jpeg";
+    const inputFile = path.join(process.cwd(), `temp_${timestamp}.${inputExt}`);
+    const outputFile = path.join(process.cwd(), `temp_${timestamp}.webp`);
 
     try {
-      await sock.sendMessage(from, {
-        text: "⏳ Media sedang diproses menjadi stiker...",
-      });
-
       const stream = await downloadContentFromMessage(mediaMessage, mediaType);
       let buffer = Buffer.from([]);
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
-      }
+      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+      fs.writeFileSync(inputFile, buffer);
 
-      const input = "temp_input";
-      const output = "temp_output.webp";
-      fs.writeFileSync(input, buffer);
-
-      // --- 2. LOGIKA BARU UNTUK TEKS DIMULAI DI SINI ---
-
-      // Ambil teks dari argumen (variabel 'text' berisi semua teks setelah '#stiker ')
       const stickerText = args.join(" ").trim();
-
-      // Tentukan path ke file font Anda
-      // Pastikan file 'font.ttf' ada di direktori yang sama dengan file ini
-      const fontPath = path.join(__dirname, "../fonts/Roboto/static/Roboto_SemiCondensed-Light.ttf");
-
-      // Cek apakah file font ada
-      if (stickerText && !fs.existsSync(fontPath)) {
-        console.error("File font tidak ditemukan di:", fontPath);
-        await sock.sendMessage(from, {
-          text: "❌ Gagal membuat stiker: File font (font.ttf) tidak ditemukan.",
-        });
-        return;
-      }
       
-      // Sanitasi path untuk ffmpeg (terutama di Windows)
-      const escapedFontPath = fontPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+      // LOGIKA FILTER UTAMA
+      let vf = `fps=15,scale=512:512:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000`;
 
-      // Filter dasar untuk stiker
-      const baseFilters = "scale=512:512:force_original_aspect_ratio=decrease,fps=15,format=rgba,pad=512:512:-1:-1:color=0x00000000";
-      
-      let finalFilters = baseFilters;
-
-      // Jika ada teks, tambahkan filter drawtext
+      // --- LOGIKA TEXT & EMOJI ---
       if (stickerText) {
-        // Sanitasi teks untuk ffmpeg (mengganti ' dengan ’)
-        const safeText = stickerText.replace(/'/g, "’");
-
-        const textFilter = `drawtext=text='${safeText}':fontfile='${escapedFontPath}':fontsize=40:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=h-(text_h*1.5)`;
+        // ⚠️ PENTING: Ganti path ini ke font yang support emoji (Misal: NotoEmoji-Regular.ttf)
+        // Jika tetap pakai Roboto, emoji akan hilang/jadi kotak.
+        // Download di: https://fonts.google.com/noto/specimen/Noto+Emoji
+        const fontPath = path.join(__dirname, "../../fonts/NotoEmoji-Regular.ttf"); 
         
-        // Gabungkan filter dasar dengan filter teks
-        finalFilters = `${baseFilters},${textFilter}`;
+        // Fallback jika font Noto tidak ada, pakai Roboto (tapi emoji hilang)
+        const fallbackFont = path.join(__dirname, "../../fonts/Roboto/static/Roboto_SemiCondensed-Light.ttf");
+        const finalFont = fs.existsSync(fontPath) ? fontPath : fallbackFont;
+
+        if (fs.existsSync(finalFont)) {
+            const escapedFontPath = finalFont.replace(/\\/g, '/').replace(/:/g, '\\:');
+            
+            // Escape karakter khusus FFmpeg
+            // Emoji aman dilewatkan asalkan Font mendukungnya
+            const safeText = stickerText
+                .replace(/\\/g, '\\\\')
+                .replace(/:/g, '\\:')
+                .replace(/'/g, ''); 
+
+            // fontsize=35, borderw=2 (Stroke Hitam)
+            vf += `,drawtext=text='${safeText}':fontfile='${escapedFontPath}':fontsize=35:fontcolor=white:borderw=2:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)-15`;
+        }
       }
 
-      // --- AKHIR DARI LOGIKA BARU ---
-
-
-      // 3. Modifikasi argumen ffmpeg
       const ffmpegArgs = [
-        "-i",
-        input,
-        "-vf", // Gunakan variabel finalFilters yang sudah dinamis
-        finalFilters,
-        "-vcodec",
-        "libwebp",
-        "-lossless",
-        "0",
-        "-qscale",
-        "60",
-        "-preset",
-        "picture",
-        "-loop",
-        "0",
+        "-i", inputFile,
+        "-vcodec", "libwebp",
+        "-vf", vf,
+        "-lossless", "0",
+        "-compression_level", "4",
+        "-q:v", "50",
+        "-loop", "0",
         "-an",
-        "-vsync",
-        "0",
-        output,
+        "-vsync", "0",
+        "-preset", "default",
+        outputFile
       ];
 
-      const run = spawnSync("ffmpeg", ffmpegArgs);
-      if (run.error) throw run.error;
-      
-      // Cek apakah output ffmpeg ada error
-      if (run.stderr && run.stderr.length > 0) {
-        // Tampilkan error stderr jika ada, ini membantu debugging
-        console.error("FFMPEG Stderr:", run.stderr.toString());
+      const result = spawnSync("ffmpeg", ffmpegArgs);
+
+      if (result.error) throw result.error;
+      if (!fs.existsSync(outputFile) || fs.statSync(outputFile).size === 0) {
+         throw new Error("Gagal convert media.");
       }
 
-      await sock.sendMessage(from, {
-        sticker: fs.readFileSync(output),
-      });
+      await sock.sendMessage(from, { sticker: fs.readFileSync(outputFile) }, { quoted: msg });
 
-      fs.unlinkSync(input);
-      fs.unlinkSync(output);
     } catch (err) {
       console.error("Sticker error:", err);
-      await sock.sendMessage(from, {
-        text: "❌ Gagal membuat stiker.",
-      });
-      // Pastikan file sementara dihapus meskipun gagal
-      if (fs.existsSync(input)) fs.unlinkSync(input);
-      if (fs.existsSync(output)) fs.unlinkSync(output);
+      await sock.sendMessage(from, { text: "❌ Gagal membuat stiker." });
+    } finally {
+      try {
+        if (fs.existsSync(inputFile)) fs.unlinkSync(inputFile);
+        if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile);
+      } catch (e) {}
     }
   },
 };

@@ -1,49 +1,47 @@
-// commands/semester/edit.js
+// src/commands/semester/edit.js
 module.exports = {
   name: "#edit-semester",
-  description: "Edit semester. Format: #edit-semester [ID] [name/status] [Value]",
-  execute: async (bot, from, sender, args, msg) => {
-    if (!from.endsWith("@g.us")) return; // Command hanya untuk grup
+  description: "Edit semester. Format: #edit-semester [ID] [field] [value]",
+  execute: async (bot, from, sender, args, msg, text) => {
+    if (!from.endsWith("@g.us")) return;
 
-    // Validasi jumlah argumen
+    // 1. Validasi Input (Spasi)
     if (args.length < 3) {
-        return bot.sock.sendMessage(from, { text: "⚠️ Format Salah!\nContoh:\n`#edit-semester 1 status 1`\n`#edit-semester 1 name Semester Baru`" });
+        return bot.sock.sendMessage(from, { 
+            text: "⚠️ *Format Salah (Gunakan Spasi)*\n\nContoh:\n`#edit-semester 1 status 1` (Aktifkan)\n`#edit-semester 1 nama Semester Pendek` (Ganti Nama)" 
+        });
     }
 
     const id = parseInt(args[0]);
     const field = args[1].toLowerCase();
     const value = args.slice(2).join(" ").trim();
 
-    if (isNaN(id)) {
-        return bot.sock.sendMessage(from, { text: "❌ ID Semester harus angka." });
-    }
+    if (isNaN(id)) return bot.sock.sendMessage(from, { text: "❌ ID Semester harus angka." });
 
     try {
-      // 1. Cek Kelas (Dual Group Check)
+      // 2. Cek Kelas
       const kelas = await bot.db.prisma.class.findFirst({ 
           where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] } 
       });
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
-      const classId = kelas.id;
       
-      // 2. Cek apakah Semester target milik Kelas ini
+      // 3. Cek Target Semester
       const targetSem = await bot.db.prisma.semester.findFirst({
-        where: { id: id, classId: classId }
+        where: { id: id, classId: kelas.id }
       });
 
-      if (!targetSem) {
-          return bot.sock.sendMessage(from, { text: `❌ Semester ID ${id} tidak ditemukan di kelas ini.` });
-      }
+      if (!targetSem) return bot.sock.sendMessage(from, { text: `❌ Semester ID ${id} tidak ditemukan.` });
 
       // --- LOGIC UPDATE ---
+      let reply = "";
 
       if (field === "status") {
-        if (value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "aktif") {
+        if (["1", "true", "aktif", "active"].includes(value.toLowerCase())) {
           
-          // Transaction: Matikan semua di kelas ini -> Hidupkan target
+          // Transaction: Matikan semua -> Hidupkan target
           await bot.db.prisma.$transaction([
             bot.db.prisma.semester.updateMany({ 
-              where: { classId: classId }, 
+              where: { classId: kelas.id }, 
               data: { isActive: false } 
             }), 
             bot.db.prisma.semester.update({ 
@@ -51,27 +49,44 @@ module.exports = {
               data: { isActive: true } 
             })
           ]);
-          return bot.sock.sendMessage(from, { text: `✅ Semester ID ${id} (*${targetSem.name}*) sekarang *AKTIF*.` });
+          
+          reply = `🟢 *SEMESTER DIAKTIFKAN*\n`;
+          reply += `──────────────────────\n`;
+          reply += `🏫 Kelas: ${kelas.name}\n`;
+          reply += `📅 Semester: *${targetSem.name}*\n`;
+          reply += `🆔 ID: \`${targetSem.id}\`\n\n`;
+          reply += `✅ Semester ini sekarang menjadi semester aktif.\n`;
+          reply += `──────────────────────\n`;
+          reply += `👤 Oleh: @${sender.split("@")[0]}`;
+
         } else {
-          return bot.sock.sendMessage(from, { text: "⚠️ Hanya bisa set status ke aktif (1). Gunakan semester lain untuk menonaktifkan ini." });
+          return bot.sock.sendMessage(from, { text: "⚠️ Hanya bisa mengaktifkan (set ke 1). Pilih semester lain jika ingin pindah." });
         }
       
-      } else if (field === "name" || field === "nama") { // Support 'name' atau 'nama'
-        if (value.length < 3) {
-             return bot.sock.sendMessage(from, { text: "⚠️ Nama semester terlalu pendek." });
-        }
+      } else if (["name", "nama"].includes(field)) {
+        if (value.length < 3) return bot.sock.sendMessage(from, { text: "⚠️ Nama semester terlalu pendek." });
 
         await bot.db.prisma.semester.update({ 
             where: { id }, 
             data: { name: value } 
         });
         
-        return bot.sock.sendMessage(from, { text: `✅ Nama semester ID ${id} diubah menjadi *${value}*.` });
+        reply = `✨ *DATA SEMESTER DIPERBARUI*\n`;
+        reply += `──────────────────────\n`;
+        reply += `🏫 Kelas: ${kelas.name}\n\n`;
+        reply += `🔄 *Rincian Perubahan:*\n`;
+        reply += `   🆔 ID: \`${id}\`\n`;
+        reply += `   🔻 Semula: ~${targetSem.name}~\n`;
+        reply += `   ✅ Menjadi: *${value}*\n`;
+        reply += `──────────────────────\n`;
+        reply += `👤 Oleh: @${sender.split("@")[0]}`;
 
       } else {
-        // Jika field salah
-        return bot.sock.sendMessage(from, { text: "❌ Opsi salah. Gunakan: 'name' (ubah nama) atau 'status' (aktifkan)." });
+        return bot.sock.sendMessage(from, { text: "❌ Opsi salah. Pilih: 'nama' atau 'status'." });
       }
+
+      // Kirim Balasan
+      await bot.sock.sendMessage(from, { text: reply, mentions: [sender] });
 
     } catch (e) {
       console.error("Error edit-semester:", e);

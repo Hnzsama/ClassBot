@@ -1,10 +1,20 @@
+// src/handlers/session.js
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
-// Utility untuk parsing waktu WIB
-const parseWIB = (timeStr) => {
-    const isoStart = timeStr.replace(" ", "T") + ":00+07:00"; 
-    const date = new Date(isoStart);
-    return isNaN(date.getTime()) ? null : date;
+// UTILITY: Parsing Waktu Cerdas
+const parseSmartDate = (input) => {
+    // Cek format lengkap: YYYY-MM-DD HH:mm
+    if (input.includes(" ")) {
+        const isoStart = input.replace(" ", "T") + ":00+07:00";
+        const date = new Date(isoStart);
+        return isNaN(date.getTime()) ? null : date;
+    } 
+    // Cek format tanggal saja: YYYY-MM-DD -> Otomatis jam 23:59
+    else {
+        const isoStart = input + "T23:59:00+07:00";
+        const date = new Date(isoStart);
+        return isNaN(date.getTime()) ? null : date;
+    }
 }
 
 async function handleSession(bot, msg, text) {
@@ -16,18 +26,12 @@ async function handleSession(bot, msg, text) {
   const session = sessions.get(sender);
   if (!session || session.groupId !== from) return;
 
-  // Safety Check Socket
-  if (!sock || typeof sock.sendMessage !== 'function') {
-      sessions.delete(sender); 
-      return; 
-  }
+  if (!sock || typeof sock.sendMessage !== 'function') { sessions.delete(sender); return; }
   
-  // Logic Batal
   if (text.toLowerCase() === "batal") {
     sessions.delete(sender);
     return await sock.sendMessage(from, { 
-        text: `❌ Input dibatalkan. Sesi ditutup, @${userNumber}.`,
-        mentions: [sender]
+        text: `⛔ Input dibatalkan. Data dihapus.`, mentions: [sender] 
     });
   }
 
@@ -38,7 +42,9 @@ async function handleSession(bot, msg, text) {
       if (session.step === 1) {
         const nomorPilihan = parseInt(text);
 
-        if (isNaN(nomorPilihan)) { return await sock.sendMessage(from, { text: `⚠️ @${userNumber}, mohon ketik *NOMOR* saja (Angka).`, mentions: [sender] }); }
+        if (isNaN(nomorPilihan)) { 
+            return await sock.sendMessage(from, { text: `⚠️ Mohon ketik *ANGKA* sesuai nomor mapel di list.`, mentions: [sender] }); 
+        }
 
         const kelas = await db.prisma.class.findUnique({
             where: { id: session.classId },
@@ -48,14 +54,16 @@ async function handleSession(bot, msg, text) {
         const subjects = kelas.semesters[0].subjects;
         const index = nomorPilihan - 1;
 
-        if (index < 0 || index >= subjects.length) { return await sock.sendMessage(from, { text: `❌ Nomor salah @${userNumber}. Pilih angka 1 sampai ${subjects.length}.`, mentions: [sender] }); }
+        if (index < 0 || index >= subjects.length) { 
+            return await sock.sendMessage(from, { text: `❌ Nomor tidak ada. Pilih antara 1 - ${subjects.length}.`, mentions: [sender] }); 
+        }
 
         const targetMapel = subjects[index];
         session.data.mapel = targetMapel.name;
         
         session.step = 2;
         return await sock.sendMessage(from, { 
-            text: `✅ Sip @${userNumber}, mapel *${targetMapel.name}* terpilih.\n\nSekarang masukkan *JUDUL TUGAS*:`, 
+            text: `✅ Oke, Mapel: *${targetMapel.name}*\n\n*Langkah 2/5: Judul Tugas*\nSilakan ketik judul atau topik tugasnya.\n_(Singkat & Jelas, misal: Makalah Sejarah)_`, 
             mentions: [sender]
         });
       }
@@ -64,62 +72,61 @@ async function handleSession(bot, msg, text) {
       if (session.step === 2) {
         session.data.judul = text;
         session.step = 3;
+        
+        // Instruksi Deadline yang lebih jelas
         return await sock.sendMessage(from, { 
-            text: `📝 Judul dicatat.\n\nLanjut @${userNumber}, ketik *DEADLINE* (Format: YYYY-MM-DD HH:mm):\nContoh: *2025-12-30 18:00*`,
+            text: `📝 Judul dicatat: "${text}"\n\n*Langkah 3/5: Deadline*\nKapan tugas ini dikumpulkan?\n\n🔹 *Opsi 1 (Lengkap):* YYYY-MM-DD HH:mm\nContoh: \`2025-11-25 15:00\`\n\n🔹 *Opsi 2 (Tanggal Saja):* YYYY-MM-DD\nContoh: \`2025-11-25\` (Otomatis jam 23:59)`,
             mentions: [sender]
         });
       }
 
-      // [STEP 3] DEADLINE (TERMASUK JAM)
+      // [STEP 3] DEADLINE (SMART PARSING)
       if (session.step === 3) {
-        const deadline = parseWIB(text);
+        const deadline = parseSmartDate(text);
         
         if (!deadline) {
-          return await sock.sendMessage(from, { text: `❌ Format tanggal dan jam salah @${userNumber}. Gunakan YYYY-MM-DD HH:mm.`, mentions: [sender] });
+          return await sock.sendMessage(from, { text: `❌ Format salah. Gunakan *YYYY-MM-DD* (Tahun-Bulan-Tgl).`, mentions: [sender] });
         }
         
+        if (deadline < new Date()) {
+             return await sock.sendMessage(from, { text: `⚠️ Tanggal sudah lewat. Masukkan tanggal masa depan.`, mentions: [sender] });
+        }
+
         session.data.deadline = deadline;
         session.step = 4;
         
-        // PROMPT BARU: Sertakan Pilihan Angka
+        const displayDeadline = deadline.toLocaleString("id-ID", { dateStyle: 'medium', timeStyle: 'short' });
+
         return await sock.sendMessage(from, {
-            text: `📅 Tanggal & Jam aman.\n\nSelanjutnya @${userNumber}, apakah ini tugas *KELOMPOK* atau *INDIVIDU*?\n\nKetik: *1* (KELOMPOK) atau *2* (INDIVIDU).`,
+            text: `📅 Deadline diset: *${displayDeadline}*\n\n*Langkah 4/5: Tipe Pengerjaan*\nApakah ini tugas Kelompok atau Individu?\n\nKetik *1* untuk 👥 KELOMPOK\nKetik *2* untuk 👤 INDIVIDU`,
             mentions: [sender]
         });
       }
 
-      // [STEP 4] TUGAS INDIVIDU / KELOMPOK
+      // [STEP 4] TIPE TUGAS
       if (session.step === 4) {
           const input = text.toLowerCase();
           let isGroupTask = null;
 
-          // Cek Angka (1/2) atau Kata (kelompok/individu)
-          if (input === '1' || input === 'kelompok' || input === 'grup') {
-              isGroupTask = true; // KELOMPOK
-          } else if (input === '2' || input === 'individu' || input === 'personal') {
-              isGroupTask = false; // INDIVIDU
-          } else {
-              return await sock.sendMessage(from, { text: `⚠️ Pilihan salah. Ketik *1* (KELOMPOK) atau *2* (INDIVIDU).` });
-          }
+          if (['1', 'kelompok', 'group'].includes(input)) isGroupTask = true;
+          else if (['2', 'individu', 'sendiri'].includes(input)) isGroupTask = false;
+          else return await sock.sendMessage(from, { text: `⚠️ Pilih *1* atau *2*.` });
           
           session.data.isGroupTask = isGroupTask;
           session.step = 5;
 
           return await sock.sendMessage(from, {
-              text: `✅ Tipe tugas: *${isGroupTask ? 'KELOMPOK' : 'INDIVIDU'}*\n\nTerakhir @${userNumber}, masukkan *LINK* tugas (Opsional).\n👉 Ketik *strip (-)* jika tidak ada.`,
+              text: `✅ Tipe: *${isGroupTask ? 'KELOMPOK' : 'INDIVIDU'}*\n\n*Langkah Terakhir: Link Sumber*\nMasukkan link (Google Drive/Classroom) jika ada.\n\n👉 Ketik *strip (-)* jika tidak ada link.`,
               mentions: [sender]
           });
       }
 
-      // [STEP 5] LINK & SAVE KE DB
+      // [STEP 5] SIMPAN DATA
       if (session.step === 5) {
         let link = text.trim();
-        
-        if (link === "-" || link.toLowerCase() === "skip" || link.toLowerCase() === "tidak ada") {
-            link = "-";
-        }
+        if (['-', 'skip', 'tidak', 'ga ada'].includes(link.toLowerCase())) link = "-";
 
-        // Simpan ke Database
+        // Simpan DB
         await db.prisma.task.create({
           data: {
             classId: session.classId,
@@ -128,27 +135,31 @@ async function handleSession(bot, msg, text) {
             deadline: session.data.deadline,
             isGroupTask: session.data.isGroupTask, 
             link: link,
-            attachmentData: session.data.attachmentData || null // <--- DATA LAMPIRAN DISIMPAN DISINI
+            attachmentData: session.data.attachmentData || null 
           }
         });
 
         sessions.delete(sender);
 
-        // Pesan Sukses Lengkap (Tampilkan Jam dan Status Tugas)
-        let reply = `✅ *TUGAS BERHASIL DITAMBAHKAN*\n\n`;
-        reply += `📚 Mapel: ${session.data.mapel}\n`;
-        reply += `📝 Judul: ${session.data.judul}\n`;
-        reply += `📌 Tipe: ${session.data.isGroupTask ? 'KELOMPOK' : 'INDIVIDU'}\n`;
-        reply += `📅 Deadline: ${session.data.deadline.toLocaleString("id-ID", { dateStyle: 'medium', timeStyle: 'short' })}\n`;
+        // Format Konfirmasi Akhir yang Keren
+        const finalDate = session.data.deadline.toLocaleString("id-ID", { 
+            weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' 
+        });
+        const typeIcon = session.data.isGroupTask ? "👥 KELOMPOK" : "👤 INDIVIDU";
+        const attachInfo = session.data.attachmentData ? "\n📎 _(Termasuk 1 Lampiran File)_" : "";
+
+        let reply = `🎉 *SUKSES! TUGAS BARU DICATAT*\n`;
+        reply += `─────────────────────\n`;
+        reply += `📚 *${session.data.mapel}*\n`;
+        reply += `📝 "${session.data.judul}"\n`;
+        reply += `📅 Deadline: *${finalDate}*\n`;
+        reply += `📌 Tipe: ${typeIcon}`;
+        reply += `${attachInfo}\n`;
         
-        if (link !== "-") {
-            reply += `🔗 Link: ${link}\n`;
-        }
-        if (session.data.attachmentData) {
-            reply += `📎 _Lampiran file tugas berhasil dicatat._\n`; // Konfirmasi lampiran
-        }
+        if (link !== "-") reply += `🔗 Link: ${link}\n`;
         
-        reply += `\nOleh: @${userNumber}`;
+        reply += `─────────────────────\n`;
+        reply += `_Bot akan mengingatkan grup saat deadline mendekat._`;
 
         return await sock.sendMessage(from, {
             text: reply,

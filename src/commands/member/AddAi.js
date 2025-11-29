@@ -1,93 +1,167 @@
 // src/commands/member/addAi.js
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { addMembersToDb } = require('./add'); 
 
 module.exports = {
   name: "#add-member-ai",
-  description: "Tambah member via AI (Teks atau Reply Gambar list).",
+  description: "Tambah member via AI (Teks atau Foto Absen).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model, db } = bot;
 
     if (!from.endsWith("@g.us")) return;
-    if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI tidak aktif." });
     
-    let inputData = text.replace("#add-member-ai", "").trim();
-    let mimeType = "text/plain";
+    let rawInput = text.replace("#add-member-ai", "").trim();
     
+    // --- 1. DETEKSI MEDIA (FOTO/DOC) ---
     const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    let mimeType = "text/plain";
+    let hasMedia = false;
+    let mediaBuffer = null;
     
     if (quotedMsg && (quotedMsg.imageMessage || quotedMsg.documentMessage)) {
-        mimeType = quotedMsg.imageMessage ? 'image/jpeg' : 'application/pdf'; 
-        inputData = await downloadMediaMessage(
-            { key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg },
-            'buffer',
-            { },
-            { reuploadRequest: sock.updateMediaMessage }
-        );
-    } else if (inputData.length < 15) {
-        return sock.sendMessage(from, { text: "⚠️ Beri deskripsi atau reply gambar yang berisi daftar member." });
+        try {
+            mimeType = quotedMsg.imageMessage ? 'image/jpeg' : 'application/pdf'; 
+            mediaBuffer = await downloadMediaMessage(
+                { key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg },
+                'buffer',
+                {},
+            );
+            hasMedia = true;
+        } catch (e) {
+            console.error("Download Error:", e);
+            return sock.sendMessage(from, { text: "❌ Gagal mengunduh media." });
+        }
     }
 
-    try {
-      await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
+    // Validasi Input
+    if (!rawInput && !hasMedia) {
+        return sock.sendMessage(from, { 
+            text: "⚠️ *AI MEMBER SCANNER*\n\nFitur ini otomatis mengekstrak data mahasiswa dari *Foto Daftar Hadir* atau *Teks*.\n\n📸 *Cara Pakai:*\nReply foto absen dengan `#add-member-ai`" 
+        });
+    }
 
-      // FIX: Dual Group Check
+    if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI tidak aktif." });
+
+    try {
+      // --- 2. CEK KELAS ---
       const kelas = await db.prisma.class.findFirst({
         where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
       if (!kelas) return sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
-      // 3. Prompting Gemini
+      await sock.sendMessage(from, { react: { text: "🧐", key: msg.key } }); // React 'Scanning'
+
+      // --- 3. SYSTEM PROMPT ---
       const systemPrompt = `
-      Anda adalah Data Extractor yang bertugas mengekstrak daftar mahasiswa dari input (gambar atau teks).
+      Peran: Data Entry Specialist.
+      Tugas: Ekstrak daftar mahasiswa dari gambar atau teks input.
       
       Aturan Ekstraksi:
-      1. Cari NIM, Nama Lengkap, dan Nama Panggilan.
-      2. Jika Panggilan tidak ada, gunakan Nama Lengkap.
-      3. Pastikan NIM berupa angka.
+      1. Identifikasi NIM (Nomor), Nama Lengkap, dan Nama Panggilan.
+      2. Jika Panggilan tidak ada, ambil satu kata dari nama depan.
+      3. Abaikan baris header/judul/tanda tangan.
+      4. Bersihkan typo OCR (misal angka '0' terbaca huruf 'O' di NIM).
+      5. NIM harus berupa angka string.
 
-      Outputkan HANYA ARRAY JSON valid.
+      OUTPUT WAJIB: JSON Array of Objects.
+      Format:
       [
-        { "nim": "NIM string", "nama": "Nama Lengkap", "panggilan": "Panggilan Singkat" }
+        { "nim": "2024001", "nama": "Ahmad Dahlan", "panggilan": "Ahmad" }
       ]
       `;
       
-      const contents = [{ role: "user", parts: [{ text: systemPrompt }] }];
-      if (Buffer.isBuffer(inputData)) {
-          contents[0].parts.push({ text: `Ekstrak daftar member dari media berikut.` });
-          contents[0].parts.push({ inlineData: { mimeType: mimeType, data: inputData.toString('base64') } });
+      let parts = [systemPrompt];
+      if (hasMedia) {
+          parts.push({ text: `Input Tambahan: "${rawInput}" (Prioritaskan Gambar)` });
+          parts.push({ inlineData: { mimeType: mimeType, data: mediaBuffer.toString('base64') } });
       } else {
-          contents[0].parts.push({ text: `Daftar Teks: ${inputData}` });
+          parts.push({ text: `Input Teks: "${rawInput}"` });
       }
       
-      const result = await model.generateContent({ contents });
-      let jsonText = result.response.text().trim().replace(/```json|```/g, "").trim();
+      // --- 4. EKSEKUSI AI ---
+      const result = await model.generateContent(parts);
+      const aiResponse = result.response.text();
       
-      let rawDataArray;
+      // --- 5. PARSING JSON ---
+      let rawDataArray = [];
       try {
-        rawDataArray = JSON.parse(jsonText);
+        const jsonMatch = aiResponse.match(/\[.*?\]/s); 
+        if (!jsonMatch) throw new Error("JSON Array not found");
+        rawDataArray = JSON.parse(jsonMatch[0]);
       } catch (e) {
-        return sock.sendMessage(from, { text: "❌ AI Gagal parsing data. Pastikan gambar jelas." });
+        console.error("AI Parse Error:", aiResponse);
+        return sock.sendMessage(from, { text: "❌ *AI BINGUNG*\nGagal membaca data. Pastikan foto jelas." });
       }
 
-      // 4. Konversi ke format processor
-      const linesForProcessor = [];
-      
-      rawDataArray.forEach(data => {
-          if (data.nim && data.nama) {
-              linesForProcessor.push(`${data.nim} | ${data.nama} | ${data.panggilan || ''}`);
+      if (rawDataArray.length === 0) {
+          return sock.sendMessage(from, { text: `📂 AI tidak menemukan data mahasiswa yang valid.` });
+      }
+
+      // --- 6. SIMPAN DATABASE & TRACKING ---
+      let report = {
+          success: 0,
+          skipped: 0,
+          samples: [] // Simpan beberapa nama untuk preview
+      };
+
+      for (const m of rawDataArray) {
+          if (!m.nim || !m.nama) continue;
+
+          // Bersihkan data
+          const cleanNim = String(m.nim).replace(/[^0-9]/g, ''); // Pastikan hanya angka
+          const cleanNama = m.nama.trim();
+          const cleanPanggilan = m.panggilan ? m.panggilan.trim() : cleanNama.split(' ')[0];
+
+          try {
+              // Cek Duplikat Global (NIM Unique)
+              const exist = await db.prisma.member.findUnique({ where: { nim: cleanNim } });
+              
+              if (!exist) {
+                  await db.prisma.member.create({
+                      data: {
+                          classId: kelas.id,
+                          nim: cleanNim,
+                          nama: cleanNama,
+                          panggilan: cleanPanggilan
+                      }
+                  });
+                  report.success++;
+                  // Simpan 3 nama pertama untuk preview laporan
+                  if (report.success <= 3) report.samples.push(`${cleanNama} (${cleanNim})`);
+              } else {
+                  report.skipped++;
+              }
+          } catch (err) {
+              console.error(`Error saving member ${cleanNim}:`, err);
           }
-      });
-
-      if (linesForProcessor.length === 0) {
-          return sock.sendMessage(from, { text: `❌ Data tidak valid atau kosong.` });
       }
 
-      return addMembersToDb(bot, from, sender, linesForProcessor, kelas.id, kelas.name, true);
+      // --- 7. LAPORAN KEREN (SCANNER STYLE) ---
+      let reply = `🤖 *LAPORAN SCANNER AI*\n`;
+      reply += `──────────────────────\n`;
+      reply += `🏫 Kelas: ${kelas.name}\n`;
+      reply += `📋 Terdeteksi: ${rawDataArray.length} Data\n\n`;
+      
+      if (report.success > 0) {
+          reply += `✅ *${report.success} BERHASIL DISIMPAN*\n`;
+          // Tampilkan preview
+          report.samples.forEach(s => reply += `   ├ ${s}\n`);
+          if (report.success > 3) reply += `   └ ...dan ${report.success - 3} lainnya\n`;
+      } else {
+          reply += `⚠️ Tidak ada data baru yang disimpan.\n`;
+      }
+
+      if (report.skipped > 0) {
+          reply += `\n⛔ *${report.skipped} DUPLIKAT* (Dilewati)\n`;
+      }
+      
+      reply += `──────────────────────\n`;
+      reply += `👤 Admin: @${sender.split("@")[0]}`;
+
+      await sock.sendMessage(from, { text: reply, mentions: [sender] });
 
     } catch (e) {
       console.error("Error add-member-ai:", e);
-      await sock.sendMessage(from, { text: `❌ Gagal memproses data via AI. Error: ${e.message}` });
+      await sock.sendMessage(from, { text: `❌ Terjadi kesalahan sistem AI.` });
     }
   }
 };

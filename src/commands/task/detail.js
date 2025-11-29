@@ -4,15 +4,15 @@ const path = require('path');
 
 module.exports = {
   name: "#detail-task",
-  description: "Lihat detail tugas lengkap + lampiran. Format: #detail-task [ID]",
+  description: "Lihat detail tugas lengkap. Format: #detail-task [ID]",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
     
     const taskId = parseInt(args[0]);
-    if (isNaN(taskId)) return bot.sock.sendMessage(from, { text: "⚠️ Masukkan ID tugas (Angka)." });
+    if (isNaN(taskId)) return bot.sock.sendMessage(from, { text: "⚠️ Masukkan ID tugas (Angka).\nContoh: `#detail-task 15`" });
 
     try {
-      // 1. Cari Kelas (FIX: Dual Group Check)
+      // 1. Cari Kelas (Dual Group Check)
       const kelas = await bot.db.prisma.class.findFirst({
           where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
@@ -25,34 +25,61 @@ module.exports = {
 
       if (!task) return bot.sock.sendMessage(from, { text: "❌ Tugas tidak ditemukan di kelas ini." });
 
-      // 3. Format Detail Pesan
-      const statusIcon = task.status === 'Selesai' ? '✅' : task.status === 'Terlewat' ? '❌' : '⏳';
-      const typeIcon = task.isGroupTask ? '👥' : '👤';
-      const deadlineStr = task.deadline.toLocaleString("id-ID", { dateStyle: 'full', timeStyle: 'short' });
-      const createdDate = task.createdAt.toLocaleString("id-ID", { dateStyle: 'short', timeStyle: 'short' });
-
-      let detailText = `📋 *DETAIL TUGAS #${task.id}*\n`;
-      detailText += `───────────────────\n`;
-      detailText += `📚 Mapel: *${task.mapel}*\n`;
-      detailText += `📝 Judul: ${task.judul}\n`;
-      detailText += `📌 Tipe: ${typeIcon} ${task.isGroupTask ? 'Kelompok' : 'Individu'}\n`;
-      detailText += `📅 Deadline: ${deadlineStr}\n`;
-      detailText += `🔗 Link: ${task.link || '-'}\n`;
-      detailText += `Status: *${statusIcon} ${task.status}*\n`;
-      detailText += `Dibuat: ${createdDate}\n`;
+      // 3. Hitung Sisa Waktu
+      const now = new Date();
+      const deadline = new Date(task.deadline);
+      const diffMs = deadline - now;
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
       
-      // 4. Kirim Media (Jika Ada)
+      let timeLeft = "";
+      if (task.status === 'Selesai') timeLeft = "Sudah Selesai";
+      else if (diffMs < 0) timeLeft = "Waktu Habis";
+      else timeLeft = diffDays === 0 ? "Hari ini!" : `${diffDays} hari lagi`;
+
+      // 4. Format Detail Pesan
+      const statusIcon = task.status === 'Selesai' ? '✅' : (diffMs < 0 ? '⛔' : '⏳');
+      const typeLabel = task.isGroupTask ? '👥 KELOMPOK' : '👤 INDIVIDU';
+      
+      const deadlineStr = deadline.toLocaleString("id-ID", { 
+          weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', 
+          hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' 
+      });
+      
+      const createdDate = task.createdAt.toLocaleDateString("id-ID");
+
+      let detailText = `📋 *LEMBAR DETAIL TUGAS*\n`;
+      detailText += `🆔 ID Tugas: \`${task.id}\`\n`;
+      detailText += `──────────────────────\n`;
+      detailText += `📚 *${task.mapel.toUpperCase()}*\n`;
+      detailText += `📝 _${task.judul}_\n\n`;
+      
+      detailText += `📌 *Info:* \n`;
+      detailText += `• Tipe: ${typeLabel}\n`;
+      detailText += `• Status: ${statusIcon} ${task.status.toUpperCase()}\n`;
+      detailText += `• Deadline: ${deadlineStr}\n`;
+      detailText += `• Sisa Waktu: *${timeLeft}*\n`;
+      
+      if (task.link && task.link !== '-' && task.link.length > 1) {
+          detailText += `\n🔗 *Link Sumber:*\n${task.link}\n`;
+      }
+
+      detailText += `──────────────────────\n`;
+      detailText += `📅 Dibuat: ${createdDate}`;
+
+      // 5. Kirim Media (Jika Ada)
       if (task.attachmentData) {
         const attach = JSON.parse(task.attachmentData);
         const localFilePath = attach.localFilePath;
 
         if (localFilePath && fs.existsSync(localFilePath)) {
             let messageType = attach.type.replace('Message', '');
+            
+            // Siapkan objek media
             let mediaContent = {
-                caption: `📎 Lampiran Tugas #${task.id}: ${task.judul}`
+                caption: `📎 *LAMPIRAN TUGAS #${task.id}*\n${task.judul}`
             };
             
-            // Fix Stream for Baileys
+            // Stream media
             mediaContent[messageType] = {
                 stream: fs.createReadStream(localFilePath), 
                 mimetype: attach.mimetype,
@@ -64,16 +91,14 @@ module.exports = {
 
             // Kirim Media Dulu
             await bot.sock.sendMessage(from, mediaContent, { quoted: msg });
-            
-            // Kirim Teks Detail
+            // Lalu Kirim Teks Detail
             await bot.sock.sendMessage(from, { text: detailText });
 
         } else {
-            detailText += `\n\n❌ *GAGAL LOAD LAMPIRAN*:\nFile lampiran tidak ditemukan di server bot.`;
+            detailText += `\n⚠️ *Lampiran Hilang*: File fisik tidak ditemukan di server.`;
             await bot.sock.sendMessage(from, { text: detailText });
         }
       } else {
-        detailText += "\n\n☑️ (Tidak ada lampiran file)";
         await bot.sock.sendMessage(from, { text: detailText });
       }
 

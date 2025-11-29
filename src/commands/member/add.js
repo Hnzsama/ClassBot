@@ -10,20 +10,24 @@ async function addMembersToDb(bot, from, sender, lines, classId, className, isAI
     
     // 1. Parsing dan Validasi Awal Input
     for (const line of lines) {
-        // Asumsi format input: NIM | Nama | Panggilan
-        const parts = line.split("|").map(p => p.trim());
+        // --- PERUBAHAN DI SINI ---
+        // Menggunakan koma (,) sebagai pemisah field
+        // Format: NIM, Nama, Panggilan
+        const parts = line.split(",").map(p => p.trim());
+        
         const nim = parts[0];
         const nama = parts[1];
+        // Ambil panggilan jika ada, jika tidak null
         const panggilan = parts[2] || null;
 
         // Validasi Kritis
         if (!nim || !nama) {
-            errors.push(`[${nim || 'NIM Kosong'}] Gagal: NIM dan Nama wajib ada.`);
+            errors.push(`[${nim || 'DATA KOSONG'}] ❌ Gagal: Format harus "NIM, Nama"`);
             continue;
         }
 
         if (nimsInInput.has(nim)) {
-            errors.push(`[${nim}] Gagal: NIM duplikat dalam daftar input.`);
+            errors.push(`[${nim}] ⚠️ Skip: NIM duplikat di dalam list input.`);
             continue;
         }
         nimsInInput.add(nim);
@@ -37,7 +41,7 @@ async function addMembersToDb(bot, from, sender, lines, classId, className, isAI
     }
 
     if (membersToCreate.length === 0) {
-        return sock.sendMessage(from, { text: `❌ Tidak ada data member valid yang diproses. ${errors.join('\n')}` });
+        return sock.sendMessage(from, { text: `❌ Tidak ada data valid.\nFormat per baris: \`NIM, Nama, Panggilan\`\n\nError Detail:\n${errors.join('\n')}` });
     }
 
     // 2. Cek Duplikat di Database (NIM Global Unique)
@@ -51,7 +55,7 @@ async function addMembersToDb(bot, from, sender, lines, classId, className, isAI
     
     const finalPayload = membersToCreate.filter(member => {
         if (existingNims.has(member.nim)) {
-            errors.push(`[${member.nim}] Gagal: NIM sudah terdaftar (Unique Global).`);
+            errors.push(`[${member.nim}] ❌ Gagal: NIM sudah terdaftar di database.`);
             return false;
         }
         return true;
@@ -59,8 +63,8 @@ async function addMembersToDb(bot, from, sender, lines, classId, className, isAI
 
     // 3. Eksekusi Create Many
     if (finalPayload.length === 0) {
-         let errMsg = isAI ? "❌ AI menghasilkan data yang semuanya duplikat." : "❌ Semua NIM sudah terdaftar atau format salah.";
-         if (errors.length > 0) errMsg += `\n\nDetail: ${errors.join('\n')}`;
+         let errMsg = isAI ? "❌ AI gagal memproses data." : "❌ Semua data gagal ditambahkan.";
+         if (errors.length > 0) errMsg += `\n\n📋 *Log Error:*\n${errors.join('\n')}`;
          return sock.sendMessage(from, { text: errMsg });
     }
     
@@ -69,8 +73,12 @@ async function addMembersToDb(bot, from, sender, lines, classId, className, isAI
     });
 
     // 4. Kirim Konfirmasi
-    let successMsg = `✅ *${result.count} Member Baru Ditambahkan* ke Kelas ${className}.\n`;
-    if (errors.length > 0) successMsg += `\n⚠️ *Gagal Ditambahkan (${errors.length}):*\n${errors.join('\n')}`;
+    let successMsg = `✅ *${result.count} MEMBER BERHASIL DITAMBAHKAN*\n`;
+    successMsg += `🏫 Kelas: ${className}\n`;
+    
+    if (errors.length > 0) {
+        successMsg += `\n⚠️ *${errors.length} Data Gagal:*\n${errors.join('\n')}`;
+    }
 
     await sock.sendMessage(from, {
       text: successMsg,
@@ -78,40 +86,43 @@ async function addMembersToDb(bot, from, sender, lines, classId, className, isAI
     });
 }
 
-
 module.exports = {
   name: "#add-member",
-  description: "Tambah member (Batch support). Format: #add-member NIM | Nama | Panggilan (per baris)",
+  description: "Tambah member. Format: NIM, Nama, Panggilan (Per Baris)",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
     const rawContent = text.replace("#add-member", "").trim();
     
     if (rawContent.length === 0) {
-      return await bot.sock.sendMessage(from, { text: "⚠️ Masukkan data member (NIM | Nama | Panggilan) per baris." });
+      return await bot.sock.sendMessage(from, { 
+          text: "⚠️ *Format Tambah Member*\n\nMasukkan data per baris dipisah koma:\n`NIM, Nama Lengkap, Panggilan`\n\nContoh:\n`#add-member`\n`2025001, Ahmad Dahlan, Ahmad`\n`2025002, Budi Utomo, Budi`" 
+      });
     }
     
+    // Split berdasarkan baris baru (Enter)
     const lines = rawContent.split('\n').filter(line => line.trim().length > 0);
     
     if (lines.length === 0) {
-         return await bot.sock.sendMessage(from, { text: "⚠️ Tidak ada baris data valid yang terdeteksi." });
+         return await bot.sock.sendMessage(from, { text: "⚠️ Tidak ada data yang terbaca." });
     }
 
     try {
-      // FIX: Dual Group Check
+      // Cek Kelas
       const kelas = await bot.db.prisma.class.findFirst({
         where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
-      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Gunakan #add-class dulu." });
+      
+      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar di grup ini." });
 
-      // 2. Execute Core Saving Logic
+      // Jalankan Fungsi Simpan
       await addMembersToDb(bot, from, sender, lines, kelas.id, kelas.name, false);
 
     } catch (e) {
       console.error("Error add-member:", e);
-      await bot.sock.sendMessage(from, { text: "❌ Gagal tambah member." });
+      await bot.sock.sendMessage(from, { text: "❌ Gagal proses tambah member." });
     }
   },
-  // Export core logic for AI file
+  // Export fungsi agar bisa dipakai fitur AI/Image to text nanti
   addMembersToDb: addMembersToDb 
 };

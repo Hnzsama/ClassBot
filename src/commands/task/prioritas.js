@@ -1,18 +1,19 @@
 // src/commands/tugas/prioritas.js
 module.exports = {
   name: "#task-prioritas",
-  description: "Minta AI untuk merekomendasikan prioritas tugas.",
+  description: "Analisis cerdas prioritas tugas menggunakan AI.",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model, db } = bot;
 
     if (!model) {
-      return await sock.sendMessage(from, { text: "⚠️ Fitur AI tidak aktif." });
+      return await sock.sendMessage(from, { text: "⚠️ Fitur AI belum dikonfigurasi." });
     }
 
     try {
+      // React loading biar user tau bot sedang mikir
       await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
 
-      // 1. Ambil Data Kelas (Fixed: Dual Group Check)
+      // 1. Validasi Kelas (Dual Group Check)
       const kelas = await db.prisma.class.findFirst({
         where: { 
             OR: [
@@ -22,9 +23,7 @@ module.exports = {
         }
       });
 
-      if (!kelas) {
-        return await sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
-      }
+      if (!kelas) return await sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
       // 2. Ambil Tugas PENDING
       const tasks = await db.prisma.task.findMany({
@@ -32,61 +31,74 @@ module.exports = {
           classId: kelas.id,
           status: "Pending"
         },
-        orderBy: { deadline: 'asc' }
+        orderBy: { deadline: 'asc' }, // Urutkan dari deadline terdekat
+        take: 10 // Ambil 10 terdekat saja agar token AI tidak jebol
       });
 
       if (tasks.length === 0) {
         return await sock.sendMessage(from, {
-          text: "🎉 *KABAR GEMBIRA!*\n\nTidak ada tugas pending saat ini.",
+          text: "🎉 *RELAX MODE ON*\n\nAnalisis selesai: Tidak ada tugas pending. Nikmati waktumu!",
         });
       }
 
-      // 3. Format Data untuk AI (Gunakan ISO Date)
-      const listStr = tasks.map((t) => {
-        const deadlineStr = t.deadline.toISOString().split('T')[0]; 
-        return `- [ID: ${t.id}] Mapel: ${t.mapel} | Judul: "${t.judul}" | Deadline: ${deadlineStr}`;
+      // 3. Smart Data Prep (Hitung sisa hari & Tipe sebelum kirim ke AI)
+      const now = new Date();
+      const taskListStr = tasks.map((t) => {
+        const deadlineDate = new Date(t.deadline);
+        const diffTime = deadlineDate - now;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        const timeStatus = diffDays < 0 ? "TERLEWAT" : (diffDays === 0 ? "HARI INI" : `${diffDays} hari lagi`);
+        const type = t.isGroupTask ? "KELOMPOK (Butuh Koordinasi)" : "INDIVIDU";
+        
+        return `- [ID:${t.id}] Mapel: ${t.mapel} | Judul: "${t.judul}" | Status: ${timeStatus} | Tipe: ${type}`;
       }).join("\n");
 
-      const todayLocale = new Date().toLocaleDateString("id-ID", { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-      // 4. Prompt Engineering
+      // 4. Advanced Prompt Engineering
       const prompt = `
-Anda adalah "Class Bot Assistant".
-Tugas Anda: Menganalisis daftar tugas pending dan memberikan rekomendasi prioritas.
+Anda adalah Asisten Strategi Akademik yang cerdas dan to-the-point.
+Tugas: Analisis daftar tugas berikut dan tentukan 3 PRIORITAS UTAMA yang harus dikerjakan segera.
 
-📅 *Hari Ini:* ${todayLocale}
+📋 *DATA TUGAS:*
+${taskListStr}
 
-📋 *Tugas Pending:*
-${listStr}
+🧠 *LOGIKA PRIORITAS:*
+1. Tugas yang "TERLEWAT" atau "HARI INI" adalah darurat mutlak.
+2. Jika deadline sama, tugas "KELOMPOK" lebih prioritas daripada "INDIVIDU" (karena butuh waktu koordinasi teman).
+3. Berikan alasan singkat dan logis.
 
-🛑 *Instruksi:*
-1. Analisis urgensi berdasarkan deadline (YYYY-MM-DD).
-2. Pilih 3 tugas paling KRUSIAL (deadline terdekat).
-3. Jawab dalam format di bawah ini.
+🛑 *FORMAT OUTPUT (WAJIB IKUTI):*
+Jangan gunakan markdown code block. Gunakan format teks WhatsApp berikut:
 
-🛑 *Format Jawaban:*
+🧠 *STRATEGI PRIORITAS AI*
+⏳ _Analisis untuk ${tasks.length} tugas pending_
+─────────────────────
 
-🤖 *ANALISIS PRIORITAS AI*
--------------------------
+🥇 *URGENSI 1: [Nama Mapel]*
+   └ 📝 "${'[Judul Tugas]'}"
+   └ 🚨 *[Status Waktu]*
+   └ 💡 _[Alasan AI: Kenapa ini harus duluan?]_
 
-🥇 *PRIORITAS UTAMA*
-📚 *[Nama Mapel]* - [Judul]
-⏳ Deadline: [Tanggal]
-💡 _Alasan: [Singkat]_
+🥈 *URGENSI 2: [Nama Mapel]*
+   └ 📝 "${'[Judul Tugas]'}"
+   └ ⏰ *[Status Waktu]*
+   └ 💡 _[Alasan AI]_
 
-🥈 *PRIORITAS KEDUA*
-...
+🥉 *URGENSI 3: [Nama Mapel]*
+   └ 📝 "${'[Judul Tugas]'}"
+   └ ⏰ *[Status Waktu]*
+   └ 💡 _[Alasan AI]_
 
-🥉 *PRIORITAS KETIGA*
-...
-
--------------------------
-💪 *Saran:* [Satu kalimat motivasi pendek]
+─────────────────────
+💪 *Saran Taktis:*
+[Satu kalimat saran strategi pengerjaan yang cerdas & menyemangati]
 `;
 
+      // 5. Generate Content
       const result = await model.generateContent(prompt);
       const aiText = result.response.text();
 
+      // 6. Kirim Hasil
       await sock.sendMessage(from, { 
         text: aiText,
         mentions: [sender]
@@ -94,7 +106,7 @@ ${listStr}
 
     } catch (err) {
       console.error("Error #prioritas:", err);
-      await sock.sendMessage(from, { text: "❌ Maaf, koneksi atau pemrosesan AI gagal." });
+      await sock.sendMessage(from, { text: "❌ Gagal memproses analisis AI." });
     }
   },
 };

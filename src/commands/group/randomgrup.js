@@ -1,13 +1,12 @@
-// src/commands/group/randomGrup.js
 module.exports = {
   name: "#randomgrup",
-  description: "Acak kelompok & Simpan ke Database. Format: #randomgrup [jumlah] [Judul Tugas]",
+  description: "Acak kelompok otomatis. Format: #randomgrup [jumlah] [Judul Tugas]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, db } = bot;
 
     if (args.length < 2) {
       return await sock.sendMessage(from, {
-        text: "⚠️ Format salah!\nGunakan: *#randomgrup [jumlah] [Judul]*\nContoh: `#randomgrup 5 Makalah Agama`",
+        text: "⚠️ *Format Salah*\n\nGunakan: `#randomgrup [jumlah] [Judul]`",
       });
     }
 
@@ -19,31 +18,22 @@ module.exports = {
     }
 
     try {
-      // 1. AMBIL KELAS (Dual Group Check)
       const kelas = await db.prisma.class.findFirst({
           where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
 
-      if (!kelas) {
-          return await sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Gunakan #add-class dulu." });
-      }
+      if (!kelas) return await sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
       const classId = kelas.id;
 
-      // 2. AMBIL MEMBER KELAS
       const members = await db.prisma.member.findMany({
         where: { classId: classId },
         orderBy: { nama: 'asc' }
       });
 
-      if (members.length === 0) {
-        return await sock.sendMessage(from, { text: "❌ Data member kosong. Tambahkan member dulu." });
-      }
+      if (members.length === 0) return await sock.sendMessage(from, { text: "❌ Data member kosong." });
+      if (jumlahKelompok > members.length) return await sock.sendMessage(from, { text: `❌ Jumlah kelompok terlalu banyak.` });
 
-      if (jumlahKelompok > members.length) {
-        return await sock.sendMessage(from, { text: `❌ Jumlah kelompok (${jumlahKelompok}) lebih besar dari siswa (${members.length}).` });
-      }
-
-      // 3. LOGIKA ACAK (Fisher-Yates)
+      // Logic Acak
       const shuffled = [...members];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -60,11 +50,11 @@ module.exports = {
         groupsPayload[groupIndex].members.push({ id: member.id });
       });
 
-      // 4. SIMPAN KE DATABASE
+      // Simpan DB
       const savedAssignment = await db.prisma.groupAssignment.create({
         data: {
           judul: judulTugas,
-          waGroupId: kelas.mainGroupId, // Link ke grup utama
+          waGroupId: kelas.mainGroupId,
           classId: classId, 
           subGroups: {
             create: groupsPayload.map(g => ({
@@ -76,31 +66,40 @@ module.exports = {
         include: { subGroups: { include: { members: true } } }
       });
 
-      // 5. OUTPUT KEREN (Box Style + Nama Lengkap)
-      let outputText = `╭── 🎲 *HASIL ACAK KELOMPOK*\n`;
+      // Output Tree Style (Icon Grup)
+      const todayStr = new Date().toLocaleDateString("id-ID", { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+
+      let outputText = `🎲 *HASIL ACAK KELOMPOK*\n`;
+      outputText += `╭──────────────────────\n`;
       outputText += `│ 📚 Tugas: *${savedAssignment.judul}*\n`;
-      outputText += `│ 💾 ID Riwayat: #${savedAssignment.id}\n`;
-      outputText += `╰────────────────────────\n`;
+      outputText += `│ 🏫 Kelas: ${kelas.name}\n`;
+      outputText += `│ 📅 Tanggal: ${todayStr}\n`;
+      outputText += `╰──────────────────────\n`;
 
       savedAssignment.subGroups.forEach((sub) => {
-        outputText += `\n🔰 *${sub.namaSubGrup.toUpperCase()}*\n`;
+        // Ganti kardus 📦 jadi 👥
+        outputText += `\n╭── [ 👥 *${sub.namaSubGrup.toUpperCase()}* (${sub.members.length}) ]\n`;
         
         if (sub.members.length === 0) {
-           outputText += `   _(Kosong)_\n`;
+           outputText += `╰ (Kosong)\n`;
         } else {
-          // Sortir nama lengkap agar urut abjad di dalam kelompok
           const sortedMembers = sub.members.sort((a, b) => a.nama.localeCompare(b.nama));
+          
           sortedMembers.forEach((m, i) => {
-            // Menggunakan Nama Lengkap (m.nama)
-            outputText += `   ${i + 1}. ${m.nama}\n`;
+            const isLast = i === sortedMembers.length - 1;
+            const branch = isLast ? '╰' : '├';
+            outputText += `${branch} ${i + 1}. ${m.nama}\n`;
           });
         }
       });
 
-      outputText += `\n────────────────────────\n`;
-      outputText += `💡 _Data tersimpan. Cek kembali dengan #list-grup_`;
+      outputText += `\n──────────────────────\n`;
+      outputText += `💡 _ID Arsip: #${savedAssignment.id}_`;
 
-      await sock.sendMessage(from, { text: outputText });
+      await sock.sendMessage(from, { 
+          text: outputText,
+          mentions: [sender]
+      });
 
     } catch (err) {
       console.error("Error random grup:", err);

@@ -1,33 +1,38 @@
 module.exports = {
   name: "#tanya-dosen",
-  description: "Konsultasi dengan Dosen AI (Killer Mode).",
+  description: "Tanya AI dengan persona Dosen. Format: #tanya-dosen [Pertanyaan]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
+    
     const question = text.replace("#tanya-dosen", "").trim();
-
-    if (!question) return sock.sendMessage(from, { text: "👨‍🏫 *Dosen:* Mana pertanyaanmu? Jangan buang waktu saya." });
-    if (!model) return;
+    if (!question) return sock.sendMessage(from, { text: "👨‍🏫 *Dosen:* \"Mana pertanyaannya? Jangan buang waktu bapak.\"" });
+    
+    if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });
 
     try {
       await sock.sendMessage(from, { react: { text: "👨‍🏫", key: msg.key } });
-      
+
       const prompt = `
-      Berperanlah sebagai Dosen Senior yang tegas, kritis, dan sedikit galak.
-      Mahasiswa bertanya: "${question}"
+      Anda adalah seorang Dosen Senior yang cerdas, berwibawa, tapi agak tegas/killer.
+      Gunakan bahasa Indonesia formal campur sedikit bahasa akademik.
       
-      Instruksi:
-      1. Jawab pertanyaannya, tapi dengan nada skeptis/menguji.
-      2. Gunakan frasa khas dosen seperti "Referensi kamu dari mana?", "Coba baca lagi jurnalnya.", "Ini pertanyaan semester 1 lho."
-      3. Tetap berikan jawaban yang benar di akhir, tapi buat mereka merasa 'tertekan' dulu.
-      4. Maksimal 3 paragraf pendek.
+      User bertanya: "${question}"
+      
+      Jawablah pertanyaan tersebut layaknya seorang dosen menjawab mahasiswa di kelas.
+      Berikan jawaban yang edukatif tapi dengan nada "menasihati".
       `;
 
       const result = await model.generateContent(prompt);
-      const answer = result.response.text();
+      const response = result.response.text().trim();
 
-      await sock.sendMessage(from, { text: `👨‍🏫 *Ruang Dosen:*\n\n${answer}`, mentions: [sender] });
+      await sock.sendMessage(from, { 
+          text: `👨‍🏫 *DOSEN BOT MENJAWAB:*\n──────────────────\n${response}`,
+          mentions: [sender]
+      });
+
     } catch (e) {
-      console.error(e);
+      console.error("Error dosen:", e);
+      await sock.sendMessage(from, { text: "❌ Dosen sedang sibuk (Error AI)." });
     }
   }
 };

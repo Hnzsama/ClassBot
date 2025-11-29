@@ -1,6 +1,7 @@
 // src/utils/vipMediaHandler.js
 
-const VIP_TRIGGER_ID_NUMBER = "52557598720232"; // ID TARGET YANG BENAR
+const VIP_TRIGGER_ID_NUMBER = "5255759872022"; // ID TARGET YANG BENAR
+// 52557598720232
 
 async function handleVipMedia(bot, msg, from, sender) {
     const { sock } = bot;

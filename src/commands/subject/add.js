@@ -6,18 +6,17 @@ async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, classN
     
     const rawNames = namesArray.map(n => n.trim()).filter(n => n.length > 0);
     if (rawNames.length === 0) {
-        return sock.sendMessage(from, { text: "⚠️ Tidak ada nama mata kuliah yang terdeteksi." });
+        return sock.sendMessage(from, { text: "⚠️ Tidak ada nama mata kuliah yang terbaca." });
     }
 
-    // 1. Cek Duplikat di Database
-    const existingSems = await db.prisma.semester.findMany({
-        where: { classId: semesterId },
-        include: { subjects: { select: { name: true } } }
+    // 1. Cek Duplikat (Hanya di semester ini)
+    const existingSubjects = await db.prisma.subject.findMany({
+        where: { semesterId: semesterId },
+        select: { name: true }
     });
     
-    const existingNames = new Set();
-    existingSems.forEach(sem => sem.subjects.forEach(sub => existingNames.add(sub.name.toLowerCase())));
-
+    // Set nama yang sudah ada (lowercase biar case-insensitive)
+    const existingNames = new Set(existingSubjects.map(sub => sub.name.toLowerCase()));
 
     const payload = [];
     const errors = [];
@@ -25,7 +24,7 @@ async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, classN
 
     rawNames.forEach(name => {
         if (existingNames.has(name.toLowerCase())) {
-            errors.push(`[${name}] sudah ada.`);
+            errors.push(`• ${name} (Sudah ada)`);
         } else {
             payload.push({
                 name: name,
@@ -37,21 +36,23 @@ async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, classN
     });
 
     if (payload.length === 0) {
-        let errMsg = isAI ? "❌ AI menghasilkan mata kuliah yang semuanya sudah ada." : "❌ Semua nama sudah terdaftar atau format salah.";
-        if (errors.length > 0) errMsg += `\n\nGagal: ${errors.join('\n')}`;
+        let errMsg = isAI ? "❌ AI tidak menemukan mapel baru." : "❌ Semua mapel sudah terdaftar.";
+        if (errors.length > 0) errMsg += `\n\n📋 *Detail:*\n${errors.join('\n')}`;
         return sock.sendMessage(from, { text: errMsg });
     }
 
-    // 2. Eksekusi Create Many
+    // 2. Eksekusi Simpan
     const result = await db.prisma.subject.createMany({
         data: payload,
     });
 
-    let successMsg = `✅ *${result.count} Mata Kuliah Baru Ditambahkan* ke Kelas ${className}.\n\n`;
-    successMsg += `Daftar: ${addedNames.join(', ')}`;
+    let successMsg = `✅ *${result.count} MAPEL DITAMBAHKAN*\n`;
+    successMsg += `🏫 Kelas: ${className}\n`;
+    successMsg += `────────────────\n`;
+    successMsg += `📚 ${addedNames.join(', ')}`;
 
     if (errors.length > 0) {
-        successMsg += `\n\n⚠️ *Gagal Ditambahkan (${errors.length}):*\n${errors.join('\n')}`;
+        successMsg += `\n\n⚠️ *Dilewati (${errors.length}):*\n${errors.join('\n')}`;
     }
 
     await sock.sendMessage(from, {
@@ -60,48 +61,45 @@ async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, classN
     });
 }
 
-
 module.exports = {
   name: "#add-mapel",
-  description: "Tambah mapel (Batch support). Format: #add-mapel [Nama 1 | Nama 2]",
+  description: "Tambah mapel. Format: #add-mapel [Nama 1], [Nama 2]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
-    const namaMapelInput = text.replace("#add-mapel", "").trim();
-    if (!namaMapelInput) {
-        return bot.sock.sendMessage(from, { text: "⚠️ Masukkan nama mapel.\nContoh: `#add-mapel P. Agama | Etika Profesi`" });
+    const rawContent = text.replace("#add-mapel", "").trim();
+    
+    if (!rawContent) {
+        return bot.sock.sendMessage(from, { 
+            text: "⚠️ *Format Tambah Mapel*\n\nGunakan koma ( , ) untuk pemisah.\n\nContoh:\n`#add-mapel Basis Data, Aljabar Linear, Bahasa Inggris`" 
+        });
     }
 
     try {
-      // 1. Cek Kelas (FIX KRUSIAL: Tambahkan INCLUDE Semesters)
+      // 1. Cek Kelas & Semester Aktif
       const kelas = await bot.db.prisma.class.findFirst({ 
           where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
-          include: { semesters: { where: { isActive: true } } } // <--- INCLUDE DITAMBAHKAN KEMBALI
+          include: { semesters: { where: { isActive: true } } }
       });
 
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
       
       const activeSem = kelas.semesters[0]; 
-      
-      // Safety check (Sekarang aman, karena jika kosong, activeSem adalah undefined, dan kondisi if akan menangkapnya)
       if (!activeSem) {
-          return bot.sock.sendMessage(from, { text: "❌ Tidak ada Semester Aktif. Pastikan kelas sudah di-setup." });
+          return bot.sock.sendMessage(from, { text: "❌ Belum ada Semester Aktif. Gunakan `#add-semester` lalu aktifkan dulu." });
       }
-      
-      const semesterId = activeSem.id;
-      const className = kelas.name;
 
-
-      // 2. Parsing Manual Batch (Input pipe/list atau single)
-      const namesToProcess = namaMapelInput.split(/[\n|, |]/).map(n => n.trim()).filter(n => n.length > 0);
+      // 2. Parsing Input (Koma atau Enter)
+      const namesToProcess = rawContent.split(/[,\n]+/).map(n => n.trim()).filter(n => n.length > 0);
       
-      return addSubjectsToDb(bot, from, sender, namesToProcess, semesterId, className, false);
+      // 3. Panggil Fungsi Database
+      return addSubjectsToDb(bot, from, sender, namesToProcess, activeSem.id, kelas.name, false);
 
     } catch (e) {
-      console.error("Error add-semester:", e);
+      console.error("Error add-mapel:", e);
       await bot.sock.sendMessage(from, { text: "❌ Gagal tambah mapel." });
     }
   },
-  // Export fungsi DB agar addAi.js bisa menggunakannya
+  // Export fungsi ini
   addSubjectsToDb: addSubjectsToDb 
 };

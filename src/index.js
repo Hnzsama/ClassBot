@@ -1,3 +1,4 @@
+// src/index.js
 const {
   makeWASocket,
   useMultiFileAuthState,
@@ -5,53 +6,64 @@ const {
   DisconnectReason,
 } = require("@whiskeysockets/baileys");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+require("dotenv").config();
 const qrcode = require("qrcode-terminal");
 const fs = require("fs");
 const path = require("path");
 
-const config = require("./config");
-const db = require("./utils/db.js");
+// Import Modul Lokal
+const { OWNER, MAPEL_OPTIONS } = require("./utils/constants");
+const db = require("./utils/db");
 const { handleSession } = require("./utils/sessionHandler");
 const cronLoader = require("./cron");
 const { handleVipMedia } = require("./utils/vipMediaHandler");
+const { checkContent } = require("./utils/moderation"); // Import Moderasi
+
+// ID VIP untuk media alert
+const VIP_TRIGGER_ID_NUMBER = "276252363632838"; 
 
 async function startSock() {
-  const { state, saveCreds } = await useMultiFileAuthState(config.sessionName);
+  const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
   const { version } = await fetchLatestBaileysVersion();
 
+  // 1. INISIALISASI GEMINI AI
   let model;
-  if (config.gemini.apiKey) {
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+  if (GEMINI_API_KEY) {
     try {
-      const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
-      model = genAI.getGenerativeModel({ 
-        model: config.gemini.modelName,
-        systemInstruction: config.gemini.systemInstruction
-      });
+      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+      model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      console.log("✅ Koneksi ke Gemini AI berhasil.");
     } catch (e) {
+      console.error("❌ Gagal inisialisasi Gemini AI:", e.message);
       model = null;
     }
+  } else {
+    console.warn("⚠️ PERINGATAN: GEMINI_API_KEY tidak ditemukan.");
+    model = null;
   }
 
+  // 2. INISIALISASI SOCKET WA
   const sock = makeWASocket({
     version,
     auth: state,
     printQRInTerminal: false,
-    browser: [config.botName, "Chrome", "1.0.0"],
   });
 
+  // Dependency Injection Object (Bot Global)
   const bot = {
     sock,
     model,
     db, 
-    config,
     sessions: new Map(),
     commands: new Map(),
     polls: new Map(),
+    owner: OWNER,
+    mapelOptions: MAPEL_OPTIONS,
+    processedMsgs: new Set(), // Anti Double Process
   };
 
-  // ===================================
-  // 3. COMMAND LOADER (REKURSIF)
-  // ===================================
+  // 3. COMMAND LOADER
   const commandsPath = path.join(__dirname, "commands");
 
   const getAllCommandFiles = (dirPath, arrayOfFiles = []) => {
@@ -69,54 +81,54 @@ async function startSock() {
 
   try {
     const commandFiles = getAllCommandFiles(commandsPath);
-    let loadedCount = 0;
-
-    console.log("\n📂 Loading Commands..."); // Header Log
-
     for (const filePath of commandFiles) {
       try {
         const command = require(filePath);
         if (command.name) {
           bot.commands.set(command.name, command);
-          
-          // Hitung relative path agar log bersih (misal: tugas/add.js)
-          const relativeName = path.relative(commandsPath, filePath);
-          console.log(`   ✅ Loaded: ${relativeName} -> ${command.name}`);
-          
-          loadedCount++;
         }
-      } catch (err) {
-        console.error(`   ❌ Gagal load ${filePath}:`, err.message);
+      } catch (e) {
+        console.error(`❌ Gagal memuat ${filePath}:`, e);
       }
     }
-    console.log(`✨ Total ${loadedCount} commands siap digunakan.\n`);
-
+    console.log(`[LOADER] Total ${bot.commands.size} perintah berhasil dimuat.`);
   } catch (e) {
-    console.error("❌ Error reading commands folder:", e);
+    console.error("[LOADER] Folder 'commands' tidak ditemukan:", e.message);
   }
 
+  // 4. START CRON JOBS
   cronLoader.initCronJobs(bot);
 
+  // 5. EVENT HANDLERS
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       qrcode.generate(qr, { small: true });
+      console.log("Scan QR code ini dengan WhatsApp kamu!");
     }
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode !== DisconnectReason.loggedOut) {
+        console.log("⚠️ Koneksi terputus, mencoba menyambungkan ulang...");
         startSock();
+      } else {
+        console.log("❌ Disconnected. Hapus folder auth_info_baileys untuk login ulang.");
       }
     } else if (connection === "open") {
-      console.log(`Connected: ${config.botName}`);
+      console.log("✅ Bot connected!");
     }
   });
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const msg of messages) {
       if (!msg.message || msg.key.fromMe) continue;
+
+      // Anti Double Process
+      if (bot.processedMsgs.has(msg.key.id)) continue;
+      bot.processedMsgs.add(msg.key.id);
+      setTimeout(() => bot.processedMsgs.delete(msg.key.id), 5000);
 
       const from = msg.key.remoteJid;
       const sender = msg.key.participant || msg.key.remoteJid;
@@ -127,15 +139,59 @@ async function startSock() {
       else if (msg.message.imageMessage) text = msg.message.imageMessage.caption || "";
       else if (msg.message.videoMessage) text = msg.message.videoMessage.caption || "";
 
+      const lower = text.toLowerCase();
       const args = text.split(" ").slice(1);
       const commandName = text.split(" ")[0].toLowerCase();
       const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
-      try {
-        if (config.vipTriggerId) {
-             await handleVipMedia(bot, msg, from, sender); 
-        }
+      console.log(`[MSG] ${from} | ${sender.split('@')[0]}: ${text.substring(0, 30)}...`);
 
+      try {
+        
+        // 1. VIP MEDIA ALERT
+        await handleVipMedia(bot, msg, from, sender); 
+
+
+        // ================================================
+        // 🛡️ 2. FITUR MODERASI (DENGAN LOGIKA ADMIN CHECK)
+        // ================================================
+        const kelasConfig = await bot.db.prisma.class.findFirst({
+            where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
+            select: { enableFilter: true } 
+        });
+
+        if (kelasConfig && kelasConfig.enableFilter) {
+            const moderation = await checkContent(bot, msg, text, sender);
+            
+            if (!moderation.isSafe) {
+                console.log(`[MODERATION] Deteksi konten toxic dari ${sender}: ${moderation.reason}`);
+                
+                try {
+                    // COBA HAPUS PESAN
+                    await sock.sendMessage(from, { delete: msg.key });
+                    
+                    // JIKA BERHASIL (Tidak masuk catch), KIRIM PERINGATAN
+                    await sock.sendMessage(from, { 
+                        text: `⚠️ @${sender.split("@")[0]} Pesan dihapus!\n⛔ *Alasan:* ${moderation.reason}\n\n_Tolong jaga etika di grup kelas._`,
+                        mentions: [sender]
+                    });
+
+                } catch (e) {
+                    // JIKA GAGAL HAPUS (Bot bukan admin)
+                    console.error(`[MODERATION] Gagal hapus pesan: ${e.message}`);
+                    await sock.sendMessage(from, { 
+                        text: `⚠️ *PERINGATAN MODERASI* ⚠️\n\nBot mendeteksi pesan tidak pantas dari @${sender.split("@")[0]}.\n⛔ *Alasan:* ${moderation.reason}\n\n❌ *Gagal Menghapus:* Bot belum menjadi **ADMIN**. Harap admin grup menjadikan bot sebagai admin agar fitur filter berfungsi.`,
+                        mentions: [sender]
+                    });
+                }
+                
+                continue; // Stop proses, jangan lanjut ke command lain
+            }
+        }
+        // ================================================
+
+
+        // A. Handle Polling
         const pollData = bot.polls.get(quotedMsgId);
         if (pollData && pollData.groupId === from) {
           const voteText = text.trim();
@@ -148,19 +204,26 @@ async function startSock() {
           }
         }
         
+        // B. Handle Session
         if (bot.sessions.has(sender)) {
           await handleSession(bot, msg, text);
           continue;
         }
 
+        // C. Handle Command
         const command = bot.commands.get(commandName);
         if (command) {
           await command.execute(bot, from, sender, args, msg, text);
           continue;
         }
 
+        // D. Auto-reply Simple
+        if (lower.includes("bot") && lower.includes("hidup")) {
+          await sock.sendMessage(from, { text: "Hadir! 🤖" });
+        }
+        
       } catch (err) {
-        console.error(err);
+        console.error(`[ERROR] Handler:`, err);
       }
     }
   });
