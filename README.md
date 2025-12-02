@@ -2,7 +2,7 @@
 
 **Class Bot Assistant** adalah bot WhatsApp cerdas yang dirancang untuk mengelola aktivitas akademik kelas secara otomatis. Dibangun menggunakan **Node.js**, **Baileys** (WhatsApp Web API), dan **Prisma ORM**, bot ini mengintegrasikan kecerdasan buatan **Google Gemini** untuk mempermudah input tugas, penjadwalan, dan interaksi kelas yang lebih hidup.
 
-![Bot Banner](/src/assets/banner.gif) ## ✨ Fitur Utama
+![Bot Banner](/src/assets/banner.gif)
 
 ### 📚 Manajemen Akademik
 - **Manajemen Kelas & Semester:** Mendukung *multi-tenancy* (banyak kelas dalam satu bot).
