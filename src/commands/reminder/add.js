@@ -161,7 +161,7 @@ Contoh (Setiap 1 hari):
 
       await bot.sock.sendMessage(from, {
         text: reply,
-        mentions: mentionsToReply // PENTING: Array JID agar tag berfungsi
+        mentions: mentionsToReply
       });
 
     } catch (e) {

@@ -64,8 +64,6 @@ module.exports = {
         }
       }
     }
-    // --- END LAMPIRAN ---
-
 
     try {
       // 1. Ambil Data Kelas

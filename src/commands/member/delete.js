@@ -21,8 +21,6 @@ module.exports = {
       });
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
-      // 2. Cari Kandidat (OR clause untuk banyak suffix)
-      // Logic: Mencari semua member yang NIM-nya berakhiran X atau Y atau Z
       const whereClauses = nimSuffixes.map(suffix => ({ nim: { endsWith: suffix } }));
       
       const candidates = await bot.db.prisma.member.findMany({

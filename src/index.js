@@ -1,4 +1,3 @@
-// src/index.js
 const {
   makeWASocket,
   useMultiFileAuthState,
@@ -11,22 +10,18 @@ const qrcode = require("qrcode-terminal");
 const fs = require("fs");
 const path = require("path");
 
-// Import Modul Lokal
-const { OWNER, MAPEL_OPTIONS } = require("./utils/constants");
+const { OWNER } = require("./utils/constants");
 const db = require("./utils/db");
 const { handleSession } = require("./utils/sessionHandler");
 const cronLoader = require("./cron");
-const { handleVipMedia } = require("./utils/vipMediaHandler");
-const { checkContent } = require("./utils/moderation"); // Import Moderasi
+const { checkContent } = require("./utils/moderation");
 
-// ID VIP untuk media alert
-const VIP_TRIGGER_ID_NUMBER = "276252363632838"; 
 
 async function startSock() {
   const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
   const { version } = await fetchLatestBaileysVersion();
 
-  // 1. INISIALISASI GEMINI AI
+  // INISIALISASI GEMINI AI
   let model;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   if (GEMINI_API_KEY) {
@@ -43,7 +38,7 @@ async function startSock() {
     model = null;
   }
 
-  // 2. INISIALISASI SOCKET WA
+  // INISIALISASI SOCKET WA
   const sock = makeWASocket({
     version,
     auth: state,
@@ -59,11 +54,10 @@ async function startSock() {
     commands: new Map(),
     polls: new Map(),
     owner: OWNER,
-    mapelOptions: MAPEL_OPTIONS,
-    processedMsgs: new Set(), // Anti Double Process
+    processedMsgs: new Set(),
   };
 
-  // 3. COMMAND LOADER
+  // COMMAND LOADER
   const commandsPath = path.join(__dirname, "commands");
 
   const getAllCommandFiles = (dirPath, arrayOfFiles = []) => {
@@ -96,10 +90,10 @@ async function startSock() {
     console.error("[LOADER] Folder 'commands' tidak ditemukan:", e.message);
   }
 
-  // 4. START CRON JOBS
+  // START CRON JOBS
   cronLoader.initCronJobs(bot);
 
-  // 5. EVENT HANDLERS
+  // EVENT HANDLERS
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", (update) => {
@@ -147,14 +141,7 @@ async function startSock() {
       console.log(`[MSG] ${from} | ${sender.split('@')[0]}: ${text.substring(0, 30)}...`);
 
       try {
-        
-        // 1. VIP MEDIA ALERT
-        await handleVipMedia(bot, msg, from, sender); 
 
-
-        // ================================================
-        // 🛡️ 2. FITUR MODERASI (DENGAN LOGIKA ADMIN CHECK)
-        // ================================================
         const kelasConfig = await bot.db.prisma.class.findFirst({
             where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
             select: { enableFilter: true } 
@@ -185,11 +172,9 @@ async function startSock() {
                     });
                 }
                 
-                continue; // Stop proses, jangan lanjut ke command lain
+                continue;
             }
         }
-        // ================================================
-
 
         // A. Handle Polling
         const pollData = bot.polls.get(quotedMsgId);
@@ -204,20 +189,20 @@ async function startSock() {
           }
         }
         
-        // B. Handle Session
+        // Handle Session
         if (bot.sessions.has(sender)) {
           await handleSession(bot, msg, text);
           continue;
         }
 
-        // C. Handle Command
+        // Handle Command
         const command = bot.commands.get(commandName);
         if (command) {
           await command.execute(bot, from, sender, args, msg, text);
           continue;
         }
 
-        // D. Auto-reply Simple
+        // Auto-reply Simple
         if (lower.includes("bot") && lower.includes("hidup")) {
           await sock.sendMessage(from, { text: "Hadir! 🤖" });
         }

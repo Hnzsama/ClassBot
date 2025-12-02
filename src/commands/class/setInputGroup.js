@@ -1,11 +1,10 @@
-// src/commands/kelas/assignInput.js
 module.exports = {
   name: "#assign-class",
   description: "Menetapkan grup ini sebagai grup input bot untuk kelas tertentu. Format: #assign-class [Class ID] [Main Group ID]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
-    // 1. Validasi Jumlah Argumen (Wajib 2)
+    // Validasi Argumen
     if (args.length !== 2) {
         return await bot.sock.sendMessage(from, { 
             text: "⚠️ Format Salah. Harap berikan Class ID dan Main Group ID sebagai *dua* argumen terpisah.\nUsage: `#assign-class [ID] [JID]`" 
@@ -26,7 +25,7 @@ module.exports = {
     
 
     try {
-      // 2. Cek apakah Class ID valid dan Main JID cocok
+      // Cek apakah Class ID valid dan Main JID cocok
       const kelas = await bot.db.prisma.class.findUnique({ 
         where: { id: classId, mainGroupId: mainJid } 
       });
@@ -35,7 +34,7 @@ module.exports = {
         return bot.sock.sendMessage(from, { text: "❌ Class ID atau Main Group ID tidak ditemukan/tidak cocok." });
       }
 
-      // 3. Cek apakah grup ini sudah terdaftar sebagai Main atau Input grup lain
+      // Cek apakah grup ini sudah terdaftar sebagai Main atau Input grup lain
       const exist = await bot.db.prisma.class.findFirst({
         where: {
           OR: [
@@ -51,13 +50,12 @@ module.exports = {
           });
       }
 
-      // 4. Update Input Group ID pada Class yang sudah ada
+      // Update Input Group ID pada Class yang sudah ada
       await bot.db.prisma.class.update({
         where: { id: classId },
         data: { inputGroupId: from }
       });
 
-      // --- WORDING YANG LEBIH JELAS ---
       let reply = `🔗 *INTEGRASI BERHASIL!* 🔗\n\n`;
       reply += `Grup ini sekarang resmi menjadi *Komunitas Input* untuk:\n`;
       reply += `🏫 Kelas: *${kelas.name}*\n`;

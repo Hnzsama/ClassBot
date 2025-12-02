@@ -1,6 +1,3 @@
-// src/commands/reminder/addAi.js
-
-// Utility untuk parsing waktu WIB
 const parseWIB = (timeStr) => {
     if (!timeStr) return null;
     const isoStart = timeStr.replace(" ", "T") + ":00+07:00"; 
@@ -20,7 +17,7 @@ const validateInterval = (intervalStr) => {
 
 module.exports = {
   name: "#reminder-ai",
-  description: "Pasang pengingat pintar via AI (Support Repeatable & Mentions).",
+  description: "Pasang pengingat pintar via AI (Support Tasks & Mentions).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model, db } = bot;
 
@@ -34,23 +31,39 @@ module.exports = {
       return sock.sendMessage(from, { text: "❌ Fitur AI tidak aktif." });
     }
 
-    // --- 1. AMBIL MENTIONS ---
+    // 1. AMBIL MENTIONS (Logic Sama)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo || {};
     const mentionedJids = contextInfo.mentionedJid || contextInfo.mentions || [];
     const targetMembers = mentionedJids.length > 0 ? mentionedJids.join(",") : null;
 
+    // 2. AMBIL KELAS (Dual Check)
     const kelas = await db.prisma.class.findFirst({
         where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
     });
-    
     if (!kelas) return sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
-    
+
     try {
       await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
 
+      // --- FITUR BARU: AMBIL DATA TUGAS SEBAGAI KONTEKS ---
+      // Ambil tugas pending untuk membantu AI mengenali deadline
+      const pendingTasks = await db.prisma.task.findMany({
+          where: { classId: kelas.id, status: "Pending" },
+          select: { id: true, mapel: true, judul: true, deadline: true }
+      });
+
+      // Format data tugas menjadi string ringkas untuk prompt
+      let tasksContext = "TIDAK ADA TUGAS PENDING.";
+      if (pendingTasks.length > 0) {
+          tasksContext = pendingTasks.map(t => {
+              const dStr = t.deadline.toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+              return `- (ID:${t.id}) ${t.mapel}: "${t.judul}" (Deadline: ${dStr} WIB)`;
+          }).join("\n");
+      }
+      // ----------------------------------------------------
+
       const options = { timeZone: 'Asia/Jakarta', hour12: false };
       const now = new Date();
-      
       const currentParts = {
           year: now.toLocaleString('en-US', { ...options, year: 'numeric' }),
           month: now.toLocaleString('en-US', { ...options, month: '2-digit' }),
@@ -59,25 +72,30 @@ module.exports = {
           minute: now.toLocaleString('en-US', { ...options, minute: '2-digit' }),
           weekday: now.toLocaleString('id-ID', { ...options, weekday: 'long' })
       };
-      
-      const dateContextIndo = `${currentParts.weekday}, ${currentParts.day}-${currentParts.month}-${currentParts.year}`;
+      const dateContextIndo = `${currentParts.weekday}, ${currentParts.day}-${currentParts.month}-${currentParts.year} Jam ${currentParts.hour}:${currentParts.minute}`;
 
-      // --- 2. UPDATE PROMPT AGAR BERSIH DARI MENTIONS ---
+      // --- UPDATE PROMPT DENGAN DATA TUGAS ---
       const systemPrompt = `
-      Anda adalah Reminder Extractor. Tugas: Analisis input user -> JSON.
-      Waktu Sekarang (WIB): ${dateContextIndo} Jam ${currentParts.hour}:${currentParts.minute}
+      Anda adalah Reminder Extractor Cerdas.
+      
+      INFO KONTEKS:
+      - Waktu Sekarang: ${dateContextIndo} WIB
+      - Daftar Tugas Aktif di Database:
+      ${tasksContext}
+      
+      INSTRUKSI UTAMA:
+      Analisis input user. Jika user merujuk ke tugas tertentu (misal "ingetin tugas alpro"), cari deadline tugas tersebut di daftar di atas, lalu gunakan deadline itu sebagai acuan waktu (misal untuk 'repeatUntil' atau 'waktuMulai').
       
       Aturan Ekstraksi:
       1. WaktuMulai: 'YYYY-MM-DD HH:mm'. Harus masa depan.
-      2. RepeatInterval: Format '1m', '5h', '1d'. (Opsional)
-      3. RepeatUntil: 'YYYY-MM-DD HH:mm'. (Opsional)
-      4. Pesan: Ambil inti pesannya saja.
-         PENTING: JANGAN masukkan kata-kata rujukan target seperti "untuk @User", "ke @User", "tag @User" ke dalam field 'pesan', karena sistem sudah menangani tagging secara terpisah. Bersihkan pesan dari mention.
+      2. RepeatInterval: Format '15m', '1h'. (Opsional)
+      3. RepeatUntil: 'YYYY-MM-DD HH:mm'. (Opsional, biasanya deadline tugas).
+      4. Pesan: Bersihkan dari mention (@user).
 
-      Input: "${requestText}"
+      Input User: "${requestText}"
 
       Contoh Output JSON:
-      { "pesan": "Bawa buku sejarah", "waktuMulai": "2025-11-23 07:00", "repeatInterval": "1h" }
+      { "pesan": "Kerjain Alpro woy", "waktuMulai": "2025-11-23 18:00", "repeatInterval": "30m", "repeatUntil": "2025-11-24 23:59" }
       `;
 
       const contents = [{ role: "user", parts: [{ text: systemPrompt }] }];
@@ -131,7 +149,6 @@ module.exports = {
               } else { repeatInterval = null; }
           }
 
-          // Simpan ke DB (Sender simpan nomornya saja)
           await db.prisma.reminder.create({
             data: {
               pesan: data.pesan,
@@ -152,17 +169,13 @@ module.exports = {
           successCount++;
       }
 
-      // --- 3. LOGIKA DISPLAY TAGGING ---
       if (successCount > 0) {
           let header = `✨ *${successCount} JADWAL DISIMPAN* ✨`;
-          let mentionsToReply = [sender]; // Sender pasti ditag di reply konfirmasi
+          let mentionsToReply = [sender];
 
           if (targetMembers) {
              const targets = targetMembers.split(",");
-             // Gabungkan target ke array mentions agar nama mereka muncul biru
              mentionsToReply = mentionsToReply.concat(targets);
-             
-             // Format tampilan text: @628xxx, @628xxx
              const formattedTags = targets.map(id => `@${id.split('@')[0]}`).join(", ");
              header += `\n👥 *Tagging:* ${formattedTags}`;
           } else {
@@ -171,7 +184,7 @@ module.exports = {
 
           await sock.sendMessage(from, {
               text: `${header}\n\n${summaryText}`,
-              mentions: mentionsToReply // PENTING: Masukkan list JID ke sini
+              mentions: mentionsToReply
           });
       } else {
           await sock.sendMessage(from, { text: "❌ Gagal. Waktu yang diminta sudah terlewat atau tidak dikenali." });

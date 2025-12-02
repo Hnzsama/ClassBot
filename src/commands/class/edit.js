@@ -5,14 +5,14 @@ module.exports = {
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
-    // 1. Cek Eksistensi Kelas
+    // Cek Eksistensi Kelas
     const existingClass = await bot.db.prisma.class.findFirst({
       where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
     });
 
     if (!existingClass) return bot.sock.sendMessage(from, { text: "❌ Grup ini belum terdaftar sebagai kelas." });
 
-    // 2. Parsing Input (Menggunakan Koma)
+    // Parsing Input (Menggunakan Koma)
     const rawContent = text.replace("#edit-class", "").trim();
     const parts = rawContent.split(",").map(p => p.trim());
 
@@ -29,7 +29,7 @@ module.exports = {
     let displayField = "";
     let oldValue = "";
 
-    // 3. Tentukan Field & Simpan Nilai Lama (Untuk Perbandingan)
+    // Tentukan Field & Simpan Nilai Lama (Untuk Perbandingan)
     if (["nama", "name"].includes(field)) {
         updateData.name = newValue;
         displayField = "🏷️ NAMA KELAS";
@@ -43,16 +43,15 @@ module.exports = {
     }
 
     try {
-        // 4. Update Database
+        // Update Database
         await bot.db.prisma.class.update({
             where: { id: existingClass.id },
             data: updateData
         });
 
-        // 5. Respon Keren (Change Log Style)
+        // Respon
         let reply = `✨ *CLASS DATA UPDATED* ✨\n`;
         reply += `──────────────────────\n`;
-        // Tampilkan nama kelas (jika nama yang diedit, tampilkan yang baru)
         reply += `🏫 Kelas: *${updateData.name || existingClass.name}*\n\n`;
         
         reply += `🔄 *Rincian Perubahan:*\n`;

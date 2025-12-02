@@ -2,18 +2,17 @@
 const initTaskReminder = require("./taskReminder");
 const initGeneralReminder = require("./generalReminder");
 const initAutoUpdateTask = require("./autoUpdateTask");
+const initJam4Sender = require("./jam4Sender");
+const initMotivationSender = require("./motivationSender");
 
 function initCronJobs(bot) {
   console.log("\n⏰ Initializing Cron Jobs...");
   
-  // 1. Jalankan Cron Task (H-1)
   initTaskReminder(bot);
-  
-  // 2. Jalankan Cron General (#reminder)
   initGeneralReminder(bot);
-
-  // 3. Jalankan Cron Auto Update Task
   initAutoUpdateTask(bot);
+  initJam4Sender(bot);
+  initMotivationSender(bot);
   
   console.log("✨ All Cron Jobs are running.\n");
 }

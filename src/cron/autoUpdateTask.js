@@ -2,8 +2,6 @@
 const cron = require("node-cron");
 
 module.exports = (bot) => {
-  // 🔄 JADWAL: Cek SETIAP MENIT (* * * * *)
-  // Agar akurat pas deadline (Real-time)
   cron.schedule('* * * * *', async () => {
     const now = new Date();
 

@@ -42,11 +42,8 @@ module.exports = {
       // LOGIKA FILTER UTAMA
       let vf = `fps=15,scale=512:512:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000`;
 
-      // --- LOGIKA TEXT & EMOJI ---
       if (stickerText) {
-        // ⚠️ PENTING: Ganti path ini ke font yang support emoji (Misal: NotoEmoji-Regular.ttf)
-        // Jika tetap pakai Roboto, emoji akan hilang/jadi kotak.
-        // Download di: https://fonts.google.com/noto/specimen/Noto+Emoji
+
         const fontPath = path.join(__dirname, "../../fonts/NotoEmoji-Regular.ttf"); 
         
         // Fallback jika font Noto tidak ada, pakai Roboto (tapi emoji hilang)
@@ -55,9 +52,6 @@ module.exports = {
 
         if (fs.existsSync(finalFont)) {
             const escapedFontPath = finalFont.replace(/\\/g, '/').replace(/:/g, '\\:');
-            
-            // Escape karakter khusus FFmpeg
-            // Emoji aman dilewatkan asalkan Font mendukungnya
             const safeText = stickerText
                 .replace(/\\/g, '\\\\')
                 .replace(/:/g, '\\:')

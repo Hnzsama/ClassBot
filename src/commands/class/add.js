@@ -14,7 +14,6 @@ module.exports = {
       });
     }
 
-    // Tetap pakai koma (,) agar mudah di HP
     let parts = rawContent.split(","); 
     const namaKelas = parts[0].trim();
     const deskripsi = parts.length > 1 ? parts.slice(1).join(",").trim() : "Kelas Baru"; 

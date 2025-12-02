@@ -1,4 +1,3 @@
-// src/commands/member/addAi.js
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
@@ -48,7 +47,7 @@ module.exports = {
       });
       if (!kelas) return sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
-      await sock.sendMessage(from, { react: { text: "🧐", key: msg.key } }); // React 'Scanning'
+      await sock.sendMessage(from, { react: { text: "🧐", key: msg.key } });
 
       // --- 3. SYSTEM PROMPT ---
       const systemPrompt = `
@@ -135,7 +134,6 @@ module.exports = {
           }
       }
 
-      // --- 7. LAPORAN KEREN (SCANNER STYLE) ---
       let reply = `🤖 *LAPORAN SCANNER AI*\n`;
       reply += `──────────────────────\n`;
       reply += `🏫 Kelas: ${kelas.name}\n`;

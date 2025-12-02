@@ -14,7 +14,7 @@ model Class {
   name          String   @map("name")
   description   String?  @map("description")
   
-  enableFilter  Boolean  @default(false) @map("enable_filter") // Saklar Filter Kata
+  enableFilter  Boolean  @default(false) @map("enable_filter")
 
   semesters     Semester[]
   members       Member[]
@@ -60,7 +60,7 @@ model Task {
   status       String   @default("Pending")
   isGroupTask  Boolean  @default(false)
   
-  attachmentData String?  // <--- BARU: Menyimpan metadata file/gambar yang di-reply
+  attachmentData String?
 
   reminderStatuses TaskReminderStatus[] 
 
@@ -120,10 +120,9 @@ model Reminder {
   pesan          String
   waktu          DateTime
   isSent         Boolean   @default(false)
-  sender         String?   // Pembuat reminder
+  sender         String?   
   
-  // Field Baru: Menyimpan list orang yang ditag
-  targetMembers  String?   // Format: "6281xxx@s.whatsapp.net,6282xxx@s.whatsapp.net"
+  targetMembers  String?
 
   repeatInterval String?
   repeatUntil    DateTime?
@@ -140,10 +139,9 @@ model TaskReminderStatus {
   id             Int      @id @default(autoincrement())
   taskId         Int
   task           Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  reminderType   String   // Nilai: 'H-24', 'H-12', 'H-6', 'H-1'
+  reminderType   String   
   isSent         Boolean  @default(false)
   
-  // Pastikan unik agar satu task hanya punya satu status H-24
   @@unique([taskId, reminderType]) 
   @@map("task_reminder_status")
 }

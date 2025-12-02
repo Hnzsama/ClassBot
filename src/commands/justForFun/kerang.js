@@ -88,8 +88,6 @@ module.exports = {
   }
 };
 
-// ... (FUNGSI HELPER AI generateAnswer TETAP SAMA) ...
-
 // --- FUNGSI HELPER AI ---
 async function generateAnswer(bot, from, msg, inputUser, contextLama) {
   const { sock, model } = bot;

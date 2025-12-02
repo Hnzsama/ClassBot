@@ -14,7 +14,7 @@ module.exports = {
 
     const nimSuffix = args[0];
     const field = args[1].toLowerCase();
-    const newValue = args.slice(2).join(" "); // Gabung sisa argumen jadi satu string
+    const newValue = args.slice(2).join(" ");
 
     if (!["nama", "panggilan"].includes(field)) {
         return bot.sock.sendMessage(from, { text: "❌ Field salah. Hanya bisa edit 'nama' atau 'panggilan'." });
@@ -60,8 +60,8 @@ module.exports = {
       reply += `🆔 NIM: \`${target.nim}\`\n\n`;
       
       reply += `🔄 *Perubahan (${field.toUpperCase()}):*\n`;
-      reply += `   🔻 Semula: ~${oldValue}~\n`;
-      reply += `   ✅ Menjadi: *${newValue}*\n`;
+      reply += `🔻 Semula: ~${oldValue}~\n`;
+      reply += `✅ Menjadi: *${newValue}*\n`;
       
       reply += `──────────────────────\n`;
       reply += `✍️ Oleh: @${sender.split("@")[0]}`;

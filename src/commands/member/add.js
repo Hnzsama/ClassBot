@@ -1,6 +1,3 @@
-// src/commands/member/add.js
-
-// --- 1. FUNGSI UTAMA DATABASE (SHARED UTILITY) ---
 async function addMembersToDb(bot, from, sender, lines, classId, className, isAI = false) {
     const { sock, db } = bot;
     
@@ -10,9 +7,6 @@ async function addMembersToDb(bot, from, sender, lines, classId, className, isAI
     
     // 1. Parsing dan Validasi Awal Input
     for (const line of lines) {
-        // --- PERUBAHAN DI SINI ---
-        // Menggunakan koma (,) sebagai pemisah field
-        // Format: NIM, Nama, Panggilan
         const parts = line.split(",").map(p => p.trim());
         
         const nim = parts[0];

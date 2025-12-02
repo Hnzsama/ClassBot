@@ -53,11 +53,8 @@ module.exports = {
       // Format: 1. 12345 - Nama Lengkap (Panggilan)
       const list = members.map((m, i) => {
         const num = i + 1;
-        // NIM pakai monospace (tanda `)
         const nimFormatted = `\`${m.nim}\``; 
-        // Nama
         let nameFormatted = m.nama;
-        // Tambah panggilan jika ada
         if (m.panggilan) {
             nameFormatted += ` _(${m.panggilan})_`;
         }

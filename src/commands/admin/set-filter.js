@@ -3,7 +3,7 @@ module.exports = {
   description: "Aktifkan/Matikan filter kata kasar. Format: #set-filter [on/off]",
   execute: async (bot, from, sender, args, msg, text) => {
     // Validasi: Hanya admin grup atau Owner yang boleh
-    const isOwner = sender.includes(bot.owner); // Sesuaikan logic owner Anda
+    const isOwner = sender.includes(bot.owner);
     let isAdmin = false;
     if (!isOwner && from.endsWith("@g.us")) {
         const metadata = await bot.sock.groupMetadata(from);

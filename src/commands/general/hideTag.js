@@ -9,7 +9,7 @@ module.exports = {
       return sock.sendMessage(from, { text: "❌ Perintah ini hanya untuk grup." });
     }
 
-    // --- 1. Validasi Admin/Owner ---
+    // Validasi Admin/Owner ---
     let metadata;
     try {
         metadata = await sock.groupMetadata(from);
@@ -27,11 +27,8 @@ module.exports = {
     }
 
     try {
-        // --- 2. Persiapan Data ---
         const allMembers = metadata.participants.map(p => p.id);
         
-        // Ambil JID yang di-mention secara native (biru) oleh user
-        // Ini lebih akurat daripada parsing teks manual
         const nativeMentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
 
         // Gabungkan argumen teks
@@ -45,19 +42,17 @@ module.exports = {
             return matches.map(num => num.includes('@s.whatsapp.net') ? num : `${num}@s.whatsapp.net`);
         };
 
-        // --- 3. Logika Filter ---
-
         // SKENARIO A: --only (Hanya tag orang tertentu)
         if (fullText.includes("--only")) {
             const parts = fullText.split("--only");
-            displayMessage = parts[0].trim(); // Pesan sebelum flag
-            const targetSegment = parts[1];   // Teks setelah flag
+            displayMessage = parts[0].trim();
+            const targetSegment = parts[1];
             
-            // 1. Prioritas: Gunakan Native Mention jika ada
+            // Prioritas: Gunakan Native Mention jika ada
             if (nativeMentions.length > 0) {
                 finalMentions = nativeMentions;
             } 
-            // 2. Fallback: Parsing teks manual (misal user copas nomor)
+            // Fallback: Parsing teks manual (misal user copas nomor)
             else {
                 const textTargets = extractJidsFromText(targetSegment);
                 // Validasi: Pastikan target ada di grup ini
@@ -93,7 +88,7 @@ module.exports = {
         // Fallback pesan kosong
         if (!displayMessage) displayMessage = "📣 *PENGUMUMAN PENTING*";
 
-        // --- 4. Eksekusi Kirim ---
+        // ---Eksekusi Kirim ---
         await sock.sendMessage(from, {
             text: displayMessage,
             mentions: finalMentions

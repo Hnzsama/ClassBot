@@ -31,7 +31,7 @@ module.exports = {
 
       // 3. Cek Kepemilikan Reminder
       const reminder = await bot.db.prisma.reminder.findFirst({
-        where: { id: id, classId: kelas.id } // Filter by Class ID
+        where: { id: id, classId: kelas.id }
       });
 
       if (!reminder) return bot.sock.sendMessage(from, { text: "❌ Reminder tidak ditemukan di kelas ini." });
