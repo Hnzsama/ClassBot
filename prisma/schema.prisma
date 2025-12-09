@@ -62,7 +62,9 @@ model Task {
   
   attachmentData String?
 
-  reminderStatuses TaskReminderStatus[] 
+  reminderStatuses TaskReminderStatus[]
+
+  finishedMemberIds String? @default("") @map("finished_member_ids")
 
   classId      Int      @map("class_id")
   class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)

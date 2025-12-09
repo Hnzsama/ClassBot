@@ -2,7 +2,6 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 const BAD_WORDS_LIST = [
-    // ... (list kata kotor Anda yang panjang tadi) ...
     "jancok", "jancuk", "janck", "jnck", "juancok", "janc",
     "bangsat", "bgst", "bangs4t",
     "bajingan", "bjingan", "hancok",
@@ -99,7 +98,7 @@ async function checkContent(bot, msg, text, sender) {
 
         } catch (e) {
             console.error("Moderation AI Error:", e.message);
-            return { isSafe: true }; // Fail open jika AI error/timeout
+            return { isSafe: true };
         }
     }
 
