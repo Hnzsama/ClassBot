@@ -14,9 +14,11 @@ const parseIntervalToMs = (intervalStr) => {
     return 0;
 };
 
-// --- LOGIKA 1: TASK REMINDER (Standard) ---
+// --- LOGIKA 1: TASK REMINDER (Smart Tagging) ---
 async function checkPreciseTaskReminder(bot) {
     const nowMs = new Date().getTime();
+    
+    // Ambil tugas yang deadline-nya dalam 26 jam ke depan
     const pendingTasks = await bot.db.prisma.task.findMany({
         where: {
             status: 'Pending',
@@ -42,9 +44,35 @@ async function checkPreciseTaskReminder(bot) {
         for (const slot of slots) {
             const statusEntry = task.reminderStatuses.find(s => s.reminderType === slot.type);
             
+            // Cek apakah masuk slot waktu dan belum dikirim
             if (timeRemainingMs <= slot.thresholdMs) {
                 if (statusEntry && statusEntry.isSent) continue;
 
+                // --- 1. PROSES MEMBER & TAGGING ---
+                let groupParticipants = [];
+                try {
+                    const metadata = await bot.sock.groupMetadata(groupId);
+                    groupParticipants = metadata.participants.map(p => p.id);
+                } catch (e) { 
+                    console.error(`[CRON] Gagal fetch metadata grup ${groupId}`);
+                    continue; 
+                }
+
+                const finishedIds = task.finishedMemberIds ? task.finishedMemberIds.split(",") : [];
+                
+                // Filter: Siapa yang BELUM selesai?
+                // Logic: Ambil semua member grup, buang yang nomornya ada di finishedIds
+                const unfinishedMembers = groupParticipants.filter(memberId => {
+                    const numberOnly = memberId.split("@")[0];
+                    return !finishedIds.includes(numberOnly);
+                });
+
+                // Hitung Statistik
+                const totalStudents = groupParticipants.length;
+                const totalFinished = finishedIds.length;
+                const totalUnfinished = unfinishedMembers.length;
+
+                // --- 2. SIAPKAN PESAN ---
                 const days = Math.floor(timeRemainingMs / (24 * MS_IN_HOUR));
                 const hours = Math.ceil((timeRemainingMs % (24 * MS_IN_HOUR)) / MS_IN_HOUR);
                 const minutes = Math.ceil(timeRemainingMs / MS_IN_MINUTE);
@@ -60,91 +88,92 @@ async function checkPreciseTaskReminder(bot) {
 │
 │ ⏳ *Sisa Waktu:* ${timeString} (${slot.type})
 │ 🗓️ *Batas:* ${deadlineStr}${linkRow}
+│
+│ 📊 *Status Pengumpulan:*
+│ ✅ Sudah: ${totalFinished} mahasiswa
+│ ❌ Belum: ${totalUnfinished} mahasiswa
+│ (Total: ${totalStudents} mahasiswa)
 ╰──────────────────
-⚠️ _Segera kumpulkan sebelum terlambat!_
-cc: *All Members*`;
+⚠️ _Mention khusus untuk yang belum mengumpulkan!_
+cc: *Unfinished Members*`;
 
-                let participants = [];
-                try {
-                    const metadata = await bot.sock.groupMetadata(groupId);
-                    participants = metadata.participants.map((p) => p.id);
-                } catch (e) { }
+                // --- 3. KIRIM PESAN (Hanya tag yang belum) ---
+                if (unfinishedMembers.length > 0) {
+                    await bot.sock.sendMessage(groupId, { 
+                        text, 
+                        mentions: unfinishedMembers // Smart Tagging
+                    });
+                } else {
+                    // Jika semua sudah selesai, kirim apresiasi tanpa tag
+                    await bot.sock.sendMessage(groupId, { 
+                        text: `🎉 *SELAMAT!* Semua siswa telah menyelesaikan tugas *${task.judul}* tepat waktu! Keren! 👍`
+                    });
+                }
 
-                await bot.sock.sendMessage(groupId, { text, mentions: participants });
-
+                // Update DB Status
                 if (statusEntry) {
                     await bot.db.prisma.taskReminderStatus.update({ where: { id: statusEntry.id }, data: { isSent: true } });
                 } else {
                     await bot.db.prisma.taskReminderStatus.create({ data: { taskId: task.id, reminderType: slot.type, isSent: true } });
                 }
-                break;
+                break; 
             }
         }
     }
 }
 
-// --- LOGIKA UTAMA CRON ---
+// --- LOGIKA UTAMA CRON (Sama seperti sebelumnya) ---
 module.exports = (bot) => {
     cron.schedule('* * * * *', async () => {
         const now = new Date();
         try {
+            // 1. Cek Smart Task Reminder
             await checkPreciseTaskReminder(bot);
             
+            // 2. Cek General Reminder (Logic lama tetap berjalan di sini)
             const dueReminders = await bot.db.prisma.reminder.findMany({
                 where: { isSent: false, waktu: { lte: now } },
                 include: { class: true }
             });
 
             for (const rem of dueReminders) {
+                // ... (Logic General Reminder Anda yang sudah bagus, biarkan tetap sama) ...
                 if (!rem.class) continue;
                 const groupId = rem.class.mainGroupId;
                 const timeStr = new Date(rem.waktu).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", hour: '2-digit', minute: '2-digit' });
 
-                // Ambil Metadata Grup
                 let groupParticipants = [];
                 try {
                     const metadata = await bot.sock.groupMetadata(groupId);
                     groupParticipants = metadata.participants; 
                 } catch (e) { }
 
-                // 1. SIAPKAN ARRAY MENTIONS & CEK TIPE (Specific vs All)
                 let allMentions = [];
-                let isSpecific = false; // Flag penanda
+                let isSpecific = false;
                 let ccText = "cc: *All Members*";
 
                 if (rem.targetMembers && rem.targetMembers.length > 5) {
-                    // KASUS SPESIFIK
                     isSpecific = true;
                     const specificTargets = rem.targetMembers.split(",");
                     allMentions = allMentions.concat(specificTargets);
                     ccText = "cc: *Mentioned Members*";
                 } else {
-                    // KASUS ALL MEMBER
                     const allIds = groupParticipants.map(p => p.id);
                     allMentions = allMentions.concat(allIds);
                 }
 
-                // 2. LOGIKA SENDER (Hanya dijalankan jika BUKAN Specific)
-                // Kita hemat resource, gak perlu cari sender kalau ujung-ujungnya gak ditampilkan
                 let senderDisplay = ""; 
-                
                 if (!isSpecific) {
                     const rawSender = rem.sender ? String(rem.sender) : "";
                     const dbNumberOnly = rawSender.replace(/\D/g, "");
-                    
                     if (dbNumberOnly.length > 5) {
                         const matchedMember = groupParticipants.find(p => p.id.startsWith(dbNumberOnly));
-                        if (matchedMember) {
-                            senderDisplay = `@${matchedMember.id.split('@')[0]}`;
-                        } else {
-                            senderDisplay = `@${dbNumberOnly}`;
-                        }
+                        senderDisplay = matchedMember ? `@${matchedMember.id.split('@')[0]}` : `@${dbNumberOnly}`;
                     } else {
                         senderDisplay = rawSender || "Admin";
                     }
                 }
 
-                // 3. SUSUN PESAN (Conditional Logic)
                 let text = `╭── 🔔 *PENGINGAT JADWAL*
 │ 🏫 *Kelas:* ${rem.class.name}
 │ ⏰ *Waktu:* ${timeStr} WIB
@@ -152,45 +181,30 @@ module.exports = (bot) => {
 │ ❝ *${rem.pesan}* ❞
 ╰──────────────────`;
 
-                // PERUBAHAN DI SINI:
-                // Jika isSpecific = TRUE, jangan tambahkan baris "Oleh".
-                // Jika isSpecific = FALSE (All Member), tambahkan baris "Oleh".
                 if (!isSpecific) {
                     text += `\n👤 _Oleh: ${senderDisplay}_`;
                 }
-
-                // Tambahkan cc di bawahnya
                 text += `\n${ccText}`;
 
-                // 4. KIRIM PESAN
                 const uniqueMentions = [...new Set(allMentions)];
+                await bot.sock.sendMessage(groupId, { text, mentions: uniqueMentions });
 
-                await bot.sock.sendMessage(groupId, {
-                    text: text,
-                    mentions: uniqueMentions
-                });
-
-                // 5. HANDLE REPEAT
                 const isRepeatable = rem.repeatInterval && rem.repeatUntil;
                 if (isRepeatable && rem.repeatUntil > now) {
                     const intervalMs = parseIntervalToMs(rem.repeatInterval);
                     let nextTime = new Date(rem.waktu.getTime() + intervalMs);
-                    
-                    while (nextTime <= now) {
-                        nextTime = new Date(nextTime.getTime() + intervalMs);
-                    }
+                    while (nextTime <= now) { nextTime = new Date(nextTime.getTime() + intervalMs); }
 
                     if (nextTime < rem.repeatUntil) {
                         await bot.db.prisma.reminder.update({ where: { id: rem.id }, data: { waktu: nextTime, isSent: false } });
                         continue;
                     }
                 }
-                
                 await bot.db.prisma.reminder.update({ where: { id: rem.id }, data: { isSent: true } });
             }
 
         } catch (err) { console.error("[CRON] Error:", err); }
     }, { timezone: "Asia/Jakarta" });
 
-    console.log("✅ [CRON] Reminder Loaded (Hide Sender on Specific)");
+    console.log("✅ [CRON] Smart Task Reminder Loaded (Unfinished Only)");
 };
