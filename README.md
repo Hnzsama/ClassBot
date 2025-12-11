@@ -69,3 +69,37 @@
 git clone https://github.com/Hnzsama/ClassBot.git
 cd ClassBot
 npm install
+```
+
+### 3. Konfigurasi Environment
+Salin file `.env` dan sesuaikan:
+
+```bash
+cp .env.example .env
+```
+> **Note:** Jika tidak ada `.env.example`, buat file `.env` manual dan isi variable yang dibutuhkan (DATABASE_URL, GEMINI_API_KEY, dll).
+
+### 4. Setup Database (Prisma)
+Siapkan database SQLite:
+
+```bash
+# Generate Prisma Client
+npx prisma generate
+
+# Push Schema ke Database (Sync)
+npx prisma db push
+```
+
+### 5. Instalasi FFmpeg (Wajib untuk Media)
+Pastikan FFmpeg terinstal dan terbaca di terminal (`ffmpeg -version`).
+- **Linux (Ubuntu/Debian):**
+  ```bash
+  sudo apt update && sudo apt install ffmpeg -y
+  ```
+- **Windows:** Download dari situs resmi, ekstrak, dan masukkan `bin` folder ke 'Environment Variables > Path'.
+
+### 6. Jalankan Bot
+```bash
+npm start
+```
+Scan QR Code yang muncul untuk login.

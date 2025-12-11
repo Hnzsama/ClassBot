@@ -4,7 +4,7 @@ module.exports = {
   execute: async (bot, from, sender, args, msg) => {
     const { sock } = bot;
     const pushName = msg.pushName || sender.split("@")[0];
-    
+
     const category = args[0] ? args[0].toLowerCase() : "";
 
     // ============================================================
@@ -182,7 +182,13 @@ _Ketik_ \`#help\` _untuk kembali._`;
       const text = `🔔 *BANTUAN: REMINDER*
 Pengingat umum (Jadwal, Zoom, Kas).
 
-╭── [ *Perintah Reminder* ]
+╭── [ *AI Manager (Rekomendasi)* ]
+│
+╰ \`#reminder-ai [Instruksi Natural]\`
+  "Ingatkan futsal jam 4 sore tiap selasa"
+  "Ingetin tugas Alpro besok jam 8"
+
+╭── [ *Manual* ]
 │ Gunakan Koma ( , ) untuk ADD.
 │
 ├ \`#list-reminder\`
@@ -199,7 +205,7 @@ Pengingat umum (Jadwal, Zoom, Kas).
 │ Edit data reminder (Gunakan Spasi).
 │
 ╰ \`#delete-reminder [ID]\`
-  Hapus pengingat.
+  Hapus pengingat (Bisa banyak: ID1 ID2).
 
 _Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
@@ -213,9 +219,11 @@ _Ketik_ \`#help\` _untuk kembali._`;
 
 ╭── [ *Utilitas Grup* ]
 │
-├ \`#hidetag [Pesan]\` (🆕)
+├ \`#hidetag [Pesan]\`
 │ Tag semua member secara tersembunyi.
-│ Contoh: \`#hidetag Info penting besok libur!\`
+│
+├ \`#tag-urut [Ex: @user]\` (🆕)
+│ Tag member berurutan (bisa ada pengecualian).
 │
 ╰ \`#randomgrup [Jml] [Judul]\`
   Acak kelompok belajar.
@@ -237,7 +245,7 @@ _Ketik_ \`#help\` _untuk kembali._`;
 _Ketik_ \`#help\` _untuk kembali._`;
       return await sock.sendMessage(from, { text });
     }
-    
+
     // ============================================================
     // 9. SUB-MENU: FUN (AI & EDUKASI)
     // ============================================================
@@ -303,7 +311,7 @@ Silahkan pilih kategori bantuan di bawah ini:
 ──────────────
 *Created by Luqman Oy Oy*`;
 
-    await sock.sendMessage(from, { 
+    await sock.sendMessage(from, {
       text: text,
       mentions: [sender]
     });
