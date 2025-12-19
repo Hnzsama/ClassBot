@@ -15,7 +15,7 @@ module.exports = (bot) => {
   // JADWAL: Jam 00:00 WIB Setiap Hari
   cron.schedule('0 0 * * *', async () => {
     console.log('[CRON-MOTIVATION] 🔄 Mengirim motivasi tengah malam...');
-    
+
     try {
       if (!fs.existsSync(IMAGE_PATH)) {
         console.error(`[CRON-MOTIVATION] ❌ Gagal: File gambar tidak ditemukan.`);
@@ -32,23 +32,36 @@ module.exports = (bot) => {
         "-loop", "0",
         "-an",
         "-vsync", "0",
-        "-y", 
+        "-y",
         TEMP_WEBP_PATH
       ];
 
       const run = spawnSync("ffmpeg", ffmpegArgs);
 
       if (run.error || !fs.existsSync(TEMP_WEBP_PATH)) {
-          console.error("[CRON-MOTIVATION] Gagal konversi stiker.");
-          await bot.sock.sendMessage(TARGET_GROUP_ID, { text: "⚠️ Gagal memproses stiker motivasi." });
-          return;
+        console.error("[CRON-MOTIVATION] Gagal konversi stiker.");
+        await bot.sock.sendMessage(TARGET_GROUP_ID, { text: "⚠️ Gagal memproses stiker motivasi." });
+        return;
       }
 
       // 2. BACA FILE WEBP
       const stickerBuffer = fs.readFileSync(TEMP_WEBP_PATH);
-      
-      // 3. Pesan Teks (Update untuk Tengah Malam)
-      const message = "🌙 *Selamat Malam!* 🌙\n\nHari baru telah dimulai. Jangan lupa istirahat yang cukup agar besok segar kembali! 💤✨\n_#MidnightMotivation_";
+
+      // 3. Pesan Teks (Dynamic AI / Fallback)
+      let message = "🌙 *Selamat Malam!* 🌙\n\nHari baru telah dimulai. Jangan lupa istirahat yang cukup agar besok segar kembali! 💤✨\n_#MidnightMotivation_";
+
+      if (bot.model) {
+        try {
+          const aiPrompt = "Buatkan quotes motivasi singkat (maks 2 kalimat) tapi sangat ngena/deep untuk mahasiswa yang masih begadang atau baru mau tidur. Tema: Semangat belajar, masa depan, dan pentingnya istirahat. Akhiri dengan hashtag #MidnightMotivation. Pakai emoji bulan/bintang.";
+          const result = await bot.model.generateContent(aiPrompt);
+          const aiText = result.response.text().trim();
+          if (aiText) {
+            message = `🤖 *AI Motivation:*\n${aiText}`;
+          }
+        } catch (e) {
+          console.error("[CRON-MOTIVATION] Gagal generate teks AI, menggunakan fallback:", e.message);
+        }
+      }
 
       // 4. KIRIM PESAN & STIKER
       await bot.sock.sendMessage(TARGET_GROUP_ID, { text: message });

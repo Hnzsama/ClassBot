@@ -15,7 +15,7 @@ module.exports = (bot) => {
   // JADWAL PRODUKSI: Jam 04:00 dan 16:00 WIB
   cron.schedule('0 4,16 * * *', async () => {
     console.log('[CRON-JAM4] 🔄 Memulai rutinitas jam 4...');
-    
+
     try {
       // 1. Cek File Gambar
       if (!fs.existsSync(IMAGE_PATH)) {
@@ -34,33 +34,58 @@ module.exports = (bot) => {
         "-loop", "0",
         "-an",
         "-vsync", "0",
-        "-y", 
+        "-y",
         TEMP_WEBP_PATH
       ];
 
       const run = spawnSync("ffmpeg", ffmpegArgs);
 
       if (run.error || !fs.existsSync(TEMP_WEBP_PATH)) {
-          console.error("[CRON-JAM4] Gagal konversi stiker:", run.stderr?.toString());
-          // Fallback: Kirim pesan teks saja
-          await bot.sock.sendMessage(TARGET_GROUP_ID, { 
-              text: "⚠️ Gagal memproses stiker jam 4."
-          });
-          return;
+        console.error("[CRON-JAM4] Gagal konversi stiker:", run.stderr?.toString());
+        // Fallback: Kirim pesan teks saja
+        await bot.sock.sendMessage(TARGET_GROUP_ID, {
+          text: "⚠️ Gagal memproses stiker jam 4."
+        });
+        return;
       }
 
       // 3. BACA FILE WEBP HASIL KONVERSI
       const stickerBuffer = fs.readFileSync(TEMP_WEBP_PATH);
-      
-      // 4. Tentukan Pesan Teks (Pagi/Sore)
+
+      // 4. Tentukan Pesan Teks (Dynamic AI / Fallback)
       const hourStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta", hour: 'numeric', hour12: false });
       const currentHour = parseInt(hourStr);
 
-      let message = "🕒 *Jam 4!*";
+      let message = "🕒 *Jam 4!*"; // Default super fallback
+
+      // Default Static Messages (Fallback)
+      let staticMessage = message;
+      let aiPrompt = "";
+
       if (currentHour === 4) {
-          message = "🌅 *Jam 4 Pagi!* Waktunya bangun, sholat subuh, atau lanjut tidur? 😴";
+        staticMessage = "🌅 *Jam 4 Pagi!* Waktunya bangun, sholat subuh, atau lanjut tidur? 😴";
+        aiPrompt = "Buatkan ucapan jam 4 pagi yang lucu, singkat (maks 1 kalimat), casual, dan semangat untuk grup kelas kuliah (mahasiswa Indonesia). Ajak bangun, sholat subuh, atau sindir yang masih begadang. Pakai emoji.";
       } else if (currentHour === 16) {
-          message = "🌇 *Jam 4 Sore!* Waktunya santai sejenak, ngopi, atau pulang kuliah ☕";
+        staticMessage = "🌇 *Jam 4 Sore!* Waktunya santai sejenak, ngopi, atau pulang kuliah ☕";
+        aiPrompt = "Buatkan ucapan jam 4 sore yang santai, lucu, singkat (maks 1 kalimat), casual untuk grup kelas kuliah (mahasiswa Indonesia). Tema: pulang kampus, capek tugas, atau ngopi sore. Pakai emoji.";
+      }
+
+      // Try Generating with AI
+      if (bot.model && aiPrompt) {
+        try {
+          const result = await bot.model.generateContent(aiPrompt);
+          const aiText = result.response.text().trim();
+          if (aiText) {
+            message = `🤖 *AI Says:*\n${aiText}`;
+          } else {
+            message = staticMessage;
+          }
+        } catch (e) {
+          console.error("[CRON-JAM4] Gagal generate teks AI, menggunakan fallback:", e.message);
+          message = staticMessage;
+        }
+      } else {
+        message = staticMessage;
       }
 
       // 5. KIRIM PESAN & STIKER
