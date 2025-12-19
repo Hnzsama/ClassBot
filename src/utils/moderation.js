@@ -1,39 +1,7 @@
 // src/utils/moderation.js
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
-const BAD_WORDS_LIST = [
-    "jancok", "jancuk", "janck", "jnck", "juancok", "janc",
-    "bangsat", "bgst", "bangs4t",
-    "bajingan", "bjingan", "hancok",
-    "keparat", "brengsek", "biadab", "sialan", "setan", "iblis",
-    "tai", "taik", "t4i", "telek",
-    "anjing", "njing", "ajg", "anying", "asu", "asw",
-    "babi", "b4bi",
-    "monyet", "kunyuk", "beruk", "kampret", "cebong", "kadrun",
-    "kontol", "kntl", "konak",
-    "memek", "mmk", "pepek", "meki",
-    "jembut", "itil", "bijire",
-    "ngentot", "entot", "ngewe", "ewe", "sange", "horny",
-    "puki", "pukimak", "pantek", "kimak",
-    "bokep", "porno", "nude", "bugil", "semok", "montok",
-    "colil", "ngocok", "masturbasi",
-    "goblok", "g0blok", "gblkk",
-    "tolol", "tol0l",
-    "idiot", "autis", 
-    "bego", "dongo", "dungu", "bloon", "bego",
-    "cacat", "sumbing", "gila", "sinting", "sarap",
-    "matamu", "ndasmu", "cocot", "bacot", "bct",
-    "lonte", "perek", "jalang", "bispak", "jablay",
-    "bencong", "banci", "homo", "lesbi", "lgbt",
-    "maling", "rampok", "copet",
-    "fuck", "f*ck", "shit", "sh*t", "bitch", "b*tch", "bastard", "slut",
-    "whore", "cunt", "dick", "pussy", "cock", "asshole", "nigger", "nigga",
-    "retard", "moron", "loser", "damn", "fag", "twat", "prick", "screw",
-    "bollocks", "bugger", "arse", "wanker", "jerk", "douche", "tits", "boobs",
-    "cum", "masturbate", "penis", "vagina", "sex", "porn", "xxx", "erotic",
-    "fukk", "sh1t", "b1tch", "b1tchez", "d1ck", "p1ss", "n1gger", "n1gga",
-    "m0ron", "f4g", "tw4t", "pr1ck", "douchebag", "c0ck", "c0cksucker"
-];
+const BAD_WORDS_LIST = require('../data/badwords.json');
 const TOXIC_REGEX = new RegExp(`\\b(${BAD_WORDS_LIST.join('|')})\\b`, 'i');
 
 
@@ -43,23 +11,23 @@ async function checkContent(bot, msg, text, sender) {
     // --- LAYER 1: TEXT ---
     if (text) {
         const cleanText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
-        const matchOriginal = TOXIC_REGEX.test(text); 
-        const matchClean = TOXIC_REGEX.test(cleanText); 
-        
+        const matchOriginal = TOXIC_REGEX.test(text);
+        const matchClean = TOXIC_REGEX.test(cleanText);
+
         if (matchOriginal || matchClean) {
             return { isSafe: false, reason: "Terdeteksi kata kasar/toxic (Auto Filter)" };
         }
     }
 
     // --- LAYER 2: MEDIA (IMAGE, STICKER, VIDEO) ---
-    const trueMessage = msg.message?.viewOnceMessage?.message || 
-                        msg.message?.viewOnceMessageV2?.message || 
-                        msg.message;
+    const trueMessage = msg.message?.viewOnceMessage?.message ||
+        msg.message?.viewOnceMessageV2?.message ||
+        msg.message;
 
     // Cek keberadaan tipe media
     const isImage = trueMessage?.imageMessage || trueMessage?.stickerMessage;
     const isVideo = trueMessage?.videoMessage;
-    
+
     if ((isImage || isVideo) && model) {
         try {
             // 1. Tentukan MimeType yang benar untuk AI
@@ -73,7 +41,7 @@ async function checkContent(bot, msg, text, sender) {
                 {},
                 { logger: console, reuploadRequest: sock.updateMediaMessage }
             );
-            
+
             const prompt = `
             Kamu adalah Moderator Grup Kelas di Indonesia. Analisis media ini (gambar/video).
 
@@ -98,6 +66,12 @@ async function checkContent(bot, msg, text, sender) {
 
         } catch (e) {
             console.error("Moderation AI Error:", e.message);
+
+            // FALLBACK: Jika error karena safety block, anggap TIDAK AMAN
+            if (e.message.includes("blocked") || e.message.includes("safety")) {
+                return { isSafe: false, reason: "Konten diblokir oleh sistem keamanan AI (Sangat Berbahaya)" };
+            }
+
             return { isSafe: true };
         }
     }

@@ -4,7 +4,7 @@ const {
   fetchLatestBaileysVersion,
   DisconnectReason,
 } = require("@whiskeysockets/baileys");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 require("dotenv").config();
 const qrcode = require("qrcode-terminal");
 const fs = require("fs");
@@ -27,7 +27,15 @@ async function startSock() {
   if (GEMINI_API_KEY) {
     try {
       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ]
+      });
       console.log("✅ Koneksi ke Gemini AI berhasil.");
     } catch (e) {
       console.error("❌ Gagal inisialisasi Gemini AI:", e.message);
@@ -49,7 +57,7 @@ async function startSock() {
   const bot = {
     sock,
     model,
-    db, 
+    db,
     sessions: new Map(),
     commands: new Map(),
     polls: new Map(),
@@ -143,37 +151,37 @@ async function startSock() {
       try {
 
         const kelasConfig = await bot.db.prisma.class.findFirst({
-            where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
-            select: { enableFilter: true } 
+          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
+          select: { enableFilter: true }
         });
 
         if (kelasConfig && kelasConfig.enableFilter) {
-            const moderation = await checkContent(bot, msg, text, sender);
-            
-            if (!moderation.isSafe) {
-                console.log(`[MODERATION] Deteksi konten toxic dari ${sender}: ${moderation.reason}`);
-                
-                try {
-                    // COBA HAPUS PESAN
-                    await sock.sendMessage(from, { delete: msg.key });
-                    
-                    // JIKA BERHASIL (Tidak masuk catch), KIRIM PERINGATAN
-                    await sock.sendMessage(from, { 
-                        text: `⚠️ @${sender.split("@")[0]} Pesan dihapus!\n⛔ *Alasan:* ${moderation.reason}\n\n_Tolong jaga etika di grup kelas._`,
-                        mentions: [sender]
-                    });
+          const moderation = await checkContent(bot, msg, text, sender);
 
-                } catch (e) {
-                    // JIKA GAGAL HAPUS (Bot bukan admin)
-                    console.error(`[MODERATION] Gagal hapus pesan: ${e.message}`);
-                    await sock.sendMessage(from, { 
-                        text: `⚠️ *PERINGATAN MODERASI* ⚠️\n\nBot mendeteksi pesan tidak pantas dari @${sender.split("@")[0]}.\n⛔ *Alasan:* ${moderation.reason}\n\n❌ *Gagal Menghapus:* Bot belum menjadi **ADMIN**. Harap admin grup menjadikan bot sebagai admin agar fitur filter berfungsi.`,
-                        mentions: [sender]
-                    });
-                }
-                
-                continue;
+          if (!moderation.isSafe) {
+            console.log(`[MODERATION] Deteksi konten toxic dari ${sender}: ${moderation.reason}`);
+
+            try {
+              // COBA HAPUS PESAN
+              await sock.sendMessage(from, { delete: msg.key });
+
+              // JIKA BERHASIL (Tidak masuk catch), KIRIM PERINGATAN
+              await sock.sendMessage(from, {
+                text: `⚠️ @${sender.split("@")[0]} Pesan dihapus!\n⛔ *Alasan:* ${moderation.reason}\n\n_Tolong jaga etika di grup kelas._`,
+                mentions: [sender]
+              });
+
+            } catch (e) {
+              // JIKA GAGAL HAPUS (Bot bukan admin)
+              console.error(`[MODERATION] Gagal hapus pesan: ${e.message}`);
+              await sock.sendMessage(from, {
+                text: `⚠️ *PERINGATAN MODERASI* ⚠️\n\nBot mendeteksi pesan tidak pantas dari @${sender.split("@")[0]}.\n⛔ *Alasan:* ${moderation.reason}\n\n❌ *Gagal Menghapus:* Bot belum menjadi **ADMIN**. Harap admin grup menjadikan bot sebagai admin agar fitur filter berfungsi.`,
+                mentions: [sender]
+              });
             }
+
+            continue;
+          }
         }
 
         // A. Handle Polling
@@ -188,7 +196,7 @@ async function startSock() {
             continue;
           }
         }
-        
+
         // Handle Session
         if (bot.sessions.has(sender)) {
           await handleSession(bot, msg, text);
@@ -206,7 +214,7 @@ async function startSock() {
         if (lower.includes("bot") && lower.includes("hidup")) {
           await sock.sendMessage(from, { text: "Hadir! 🤖" });
         }
-        
+
       } catch (err) {
         console.error(`[ERROR] Handler:`, err);
       }
