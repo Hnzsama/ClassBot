@@ -250,6 +250,16 @@ async function startSock() {
 // ---------------------------------------------------------
 // API SERVER SETUP
 // ---------------------------------------------------------
+process.on('uncaughtException', (err) => {
+  console.error('❌ UNCAUGHT EXCEPTION:', err);
+  // Keep process alive if possible, but usually best to exit.
+  // We'll log it for debugging the 502/Crash issue.
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ UNHANDLED REJECTION:', reason);
+});
+
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
@@ -332,15 +342,16 @@ app.post('/api/send-message', async (req, res) => {
     }
 
     const sent = await globalSock.sendMessage(jid, { text: message });
+    console.log(`✅ API Message Sent to ${jid}`);
 
     res.json({
       status: true,
       message: 'Pesan terkirim',
-      data: { jid, content: message, key: sent.key }
+      data: { jid, content: message, key: sent?.key }
     });
 
   } catch (error) {
-    console.error('API Send Message Error:', error);
+    console.error('❌ API Send Message Error:', error);
     res.status(500).json({ status: false, message: 'Gagal mengirim pesan', error: error.message });
   }
 });
