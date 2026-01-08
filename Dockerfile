@@ -15,7 +15,7 @@ RUN npm ci
 COPY . .
 
 # Generate Prisma Client
-RUN npx prisma generate && npx prisma db push
+RUN npx prisma generate
 
 # Start the application
-CMD ["npm", "start"]
+CMD ["bin/sh", "-c", "npx prisma db push && npm start"]
