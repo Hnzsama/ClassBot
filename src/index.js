@@ -266,6 +266,11 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// Endpoint: Root (Health Check)
+app.get('/', (req, res) => {
+  res.status(200).send('Bot is running and healthy! 🚀');
+});
+
 // Endpoint: GET /api/send-message (Untuk testing via Browser)
 app.get('/api/send-message', (req, res) => {
   res.send(`
@@ -331,17 +336,24 @@ app.post('/api/send-message', async (req, res) => {
     // Jika user hanya kirim angka, kita tambahkan suffix.
     // Asumsi user kirim "628xxx" atau "08xxx" -> Perlu diperbaiki jika "08"
 
+    // Sanitize number logic...
     let jid = number;
     if (!jid.endsWith('@s.whatsapp.net')) {
-      // Simple sanitizer 
-      // Kalau diawali '08', ganti '628'
       if (jid.startsWith('08')) {
         jid = '62' + jid.slice(1);
       }
       jid = jid + '@s.whatsapp.net';
     }
 
-    const sent = await globalSock.sendMessage(jid, { text: message });
+    // CREATE TIMEOUT PROMISE
+    const sendPromise = globalSock.sendMessage(jid, { text: message });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Request Timed Out (10s)")), 10000)
+    );
+
+    // RACE START
+    const sent = await Promise.race([sendPromise, timeoutPromise]);
+
     console.log(`✅ API Message Sent to ${jid}`);
 
     res.json({
@@ -352,7 +364,8 @@ app.post('/api/send-message', async (req, res) => {
 
   } catch (error) {
     console.error('❌ API Send Message Error:', error);
-    res.status(500).json({ status: false, message: 'Gagal mengirim pesan', error: error.message });
+    const statusCode = error.message.includes('Timed Out') ? 504 : 500;
+    res.status(statusCode).json({ status: false, message: 'Gagal mengirim pesan', error: error.message });
   }
 });
 
