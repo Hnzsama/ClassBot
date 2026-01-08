@@ -54,10 +54,28 @@ async function startSock() {
     version,
     auth: state,
     printQRInTerminal: false,
+    browser: ["Ubuntu", "Chrome", "20.0.04"], // Recommended for Pairing Code
   });
 
   // UPDATE GLOBAL SOCKET
   globalSock = sock;
+
+  // PAIRING CODE LOGIC
+  const pairingNumber = process.env.PAIRING_NUMBER;
+  if (pairingNumber && !sock.authState.creds.registered) {
+    console.log(`\n⚠️ Menggunakan Pairing Code untuk nomor: ${pairingNumber}`);
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(pairingNumber);
+        console.log("\n========================================================");
+        console.log("Kode Login WhatsApp Anda:");
+        console.log(`\x1b[1m\x1b[32m${code}\x1b[0m`); // Green & Bold
+        console.log("========================================================\n");
+      } catch (err) {
+        console.error("❌ Gagal request pairing code:", err);
+      }
+    }, 4000);
+  }
 
   // Dependency Injection Object (Bot Global)
   const bot = {
@@ -112,7 +130,8 @@ async function startSock() {
 
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;
-    if (qr) {
+    // Tampilkan QR hanya jika TIDAK pakai Pairing Code
+    if (qr && !pairingNumber) {
       qrcode.generate(qr, { small: true });
       console.log("Scan QR code ini dengan WhatsApp kamu!");
     }
