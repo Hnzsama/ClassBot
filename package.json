@@ -2,7 +2,8 @@
   "name": "hello-prisma",
   "license": "MIT",
   "scripts": {
-    "start": "node ./src/index.js"
+    "start": "node ./src/index.js",
+    "build": "prisma generate && prisma db push"
   },
   "prisma": {
     "seed": "node ./prisma/seeds/seed.js"
