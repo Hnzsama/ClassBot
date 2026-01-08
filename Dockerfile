@@ -18,4 +18,4 @@ COPY . .
 RUN npx prisma generate
 
 # Start the application
-CMD ["bin/sh", "-c", "npx prisma db push && npm start"]
+CMD ["/bin/sh", "-c", "npx prisma db push && npm start"]
