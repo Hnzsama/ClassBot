@@ -17,6 +17,9 @@ const cronLoader = require("./cron");
 const { checkContent } = require("./utils/moderation");
 
 
+// GLOBAL SOCKET VARIABLE
+let globalSock = null;
+
 async function startSock() {
   const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
   const { version } = await fetchLatestBaileysVersion();
@@ -52,6 +55,9 @@ async function startSock() {
     auth: state,
     printQRInTerminal: false,
   });
+
+  // UPDATE GLOBAL SOCKET
+  globalSock = sock;
 
   // Dependency Injection Object (Bot Global)
   const bot = {
@@ -222,4 +228,108 @@ async function startSock() {
   });
 }
 
+// ---------------------------------------------------------
+// API SERVER SETUP
+// ---------------------------------------------------------
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+// Endpoint: GET /api/send-message (Untuk testing via Browser)
+app.get('/api/send-message', (req, res) => {
+  res.send(`
+    <html>
+      <head><title>Test API WA</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Test Kirim Pesan WhatsApp</h2>
+        <form id="msgForm">
+          <p>
+            <label>Nomor (08xx / 628xx):</label><br>
+            <input type="text" id="number" placeholder="0812345..." required style="padding: 5px; width: 300px;">
+          </p>
+          <p>
+            <label>Pesan:</label><br>
+            <textarea id="message" placeholder="Halo..." required style="padding: 5px; width: 300px; height: 100px;"></textarea>
+          </p>
+          <button type="submit" style="padding: 10px 20px; cursor: pointer;">Kirim Pesan</button>
+        </form>
+        <div id="result" style="margin-top: 20px; padding: 10px; background: #eee;"></div>
+
+        <script>
+          document.getElementById('msgForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerText = 'Mengirim...';
+            
+            const number = document.getElementById('number').value;
+            const message = document.getElementById('message').value;
+
+            try {
+              const res = await fetch('/api/send-message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ number, message })
+              });
+              const data = await res.json();
+              resultDiv.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+              resultDiv.innerText = 'Error: ' + err.message;
+            }
+          });
+        </script>
+      </body>
+    </html>
+    `);
+});
+
+// Endpoint: POST /api/send-message
+// Body: { number: '62812345678', message: 'Hello World' }
+app.post('/api/send-message', async (req, res) => {
+  try {
+    const { number, message } = req.body;
+
+    if (!number || !message) {
+      return res.status(400).json({ status: false, message: 'Nomor dan PESAN wajib diisi.' });
+    }
+
+    if (!globalSock) {
+      return res.status(503).json({ status: false, message: 'Bot belum terkoneksi ke WhatsApp.' });
+    }
+
+    // Format nomor (pastikan suffix @s.whatsapp.net)
+    // Jika user hanya kirim angka, kita tambahkan suffix.
+    // Asumsi user kirim "628xxx" atau "08xxx" -> Perlu diperbaiki jika "08"
+
+    let jid = number;
+    if (!jid.endsWith('@s.whatsapp.net')) {
+      // Simple sanitizer 
+      // Kalau diawali '08', ganti '628'
+      if (jid.startsWith('08')) {
+        jid = '62' + jid.slice(1);
+      }
+      jid = jid + '@s.whatsapp.net';
+    }
+
+    const sent = await globalSock.sendMessage(jid, { text: message });
+
+    res.json({
+      status: true,
+      message: 'Pesan terkirim',
+      data: { jid, content: message, key: sent.key }
+    });
+
+  } catch (error) {
+    console.error('API Send Message Error:', error);
+    res.status(500).json({ status: false, message: 'Gagal mengirim pesan', error: error.message });
+  }
+});
+
+// Jalankan server Express
+app.listen(port, () => {
+  console.log(`🚀 API Server berjalan di port ${port}`);
+});
+
+// Jalankan socket WA
 startSock();
