@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -54,7 +54,7 @@ model Subject {
 model Task {
   id           Int      @id @default(autoincrement())
   mapel        String
-  judul        String
+  judul        String   @db.Text
   deadline     DateTime
   link         String?
   status       String   @default("Pending")
@@ -119,7 +119,7 @@ model SubGroup {
 
 model Reminder {
   id             Int       @id @default(autoincrement())
-  pesan          String
+  pesan          String    @db.Text
   waktu          DateTime
   isSent         Boolean   @default(false)
   sender         String?   

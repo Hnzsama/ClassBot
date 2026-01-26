@@ -160,6 +160,17 @@ async function startSock() {
       const from = msg.key.remoteJid;
       const sender = msg.key.participant || msg.key.remoteJid;
 
+      // ===== PRIVATE CHAT HANDLER (Basis Data PJ) =====
+      if (!from.endsWith("@g.us")) {
+        try {
+          const privateBasisDataHandler = require('./handlers/privateBasisData');
+          await privateBasisDataHandler(bot, msg);
+          continue; // Skip further processing for private messages
+        } catch (error) {
+          console.error("Error in privateBasisData handler:", error);
+        }
+      }
+
       let text = "";
       if (msg.message.conversation) text = msg.message.conversation;
       else if (msg.message.extendedTextMessage) text = msg.message.extendedTextMessage.text;
