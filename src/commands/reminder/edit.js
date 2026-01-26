@@ -1,14 +1,14 @@
 // src/commands/reminder/edit.js
 module.exports = {
-  name: "#edit-reminder",
-  description: "Edit pesan, waktu, atau interval pengingat. Format: #edit-reminder [ID] [field] [value]",
+  name: "#reminder-edit",
+  description: "Edit reminder. Format: #reminder-edit [ID] [Option] [Value]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
     if (args.length < 3) {
-        return bot.sock.sendMessage(from, { 
-            text: "⚠️ Format salah. Contoh:\n`#edit-reminder 5 pesan Meeting pindah ke jam 10`\n`#edit-reminder 5 waktu 2025-11-22 10:00`" 
-        });
+      return bot.sock.sendMessage(from, {
+        text: "⚠️ Format salah. Contoh:\n`#reminder-edit 5 pesan Meeting pindah ke jam 10`\n`#reminder-edit 5 waktu 2025-11-22 10:00`"
+      });
     }
 
     const taskId = parseInt(args[0]);
@@ -19,7 +19,7 @@ module.exports = {
     const allowedFields = ['pesan', 'waktu', 'interval', 'sampai'];
 
     if (!allowedFields.includes(field)) {
-        return bot.sock.sendMessage(from, { text: "❌ Field salah. Pilih: pesan, waktu, interval, atau sampai." });
+      return bot.sock.sendMessage(from, { text: "❌ Field salah. Pilih: pesan, waktu, interval, atau sampai." });
     }
 
     try {
@@ -45,7 +45,7 @@ module.exports = {
         const newTime = new Date(isoStart);
         if (isNaN(newTime.getTime())) return bot.sock.sendMessage(from, { text: "❌ Format waktu salah (YYYY-MM-DD HH:mm)." });
         updateData.waktu = newTime;
-        updateData.isSent = false; 
+        updateData.isSent = false;
         displayValue = newTime.toLocaleString("id-ID", { dateStyle: 'medium', timeStyle: 'short' });
       } else if (field === 'interval') {
         const validIntervals = ['5m', '15m', '30m', '1h', '3h', '6h', '1d'];

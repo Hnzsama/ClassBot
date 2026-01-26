@@ -1,7 +1,7 @@
 // src/commands/semester/create-ai.js
 module.exports = {
-  name: "#add-semester-ai",
-  description: "Buat semester otomatis. Format: #add-semester-ai [Angka Terakhir]",
+  name: "#semester-ai",
+  description: "Buat semester otomatis. Format: #semester-ai [Angka Terakhir]",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
 
@@ -32,7 +32,7 @@ module.exports = {
              if (aiResponseMatch) {
                  targetNumber = parseInt(aiResponseMatch[0]);
              } else {
-                 return bot.sock.sendMessage(from, { text: "❌ AI bingung. Ketik angka langsung (contoh: `#add-semester-ai 8`)." });
+                 return bot.sock.sendMessage(from, { text: "❌ AI bingung. Ketik angka langsung (contoh: `#semester+ai 8`)." });
              }
         } catch (e) {
              console.error("Gemini Error:", e);

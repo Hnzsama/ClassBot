@@ -1,7 +1,8 @@
 // src/commands/mapel/list.js
 module.exports = {
-  name: "#list-mapel",
-  description: "Lihat daftar mata kuliah semester aktif.",
+  name: "#subject-list",
+  alias: ["#mapel-list"],
+  description: "Show list of subjects for active semester.",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
 
@@ -18,15 +19,15 @@ module.exports = {
       });
 
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
-      
+
       const activeSem = kelas.semesters[0];
-      if (!activeSem) return bot.sock.sendMessage(from, { 
-          text: "❌ Belum ada Semester Aktif.\nGunakan `#list-semester` untuk cek status." 
+      if (!activeSem) return bot.sock.sendMessage(from, {
+        text: "❌ Belum ada Semester Aktif.\nGunakan `#list-semester` untuk cek status."
       });
 
       const subjects = activeSem.subjects;
-      if (subjects.length === 0) return bot.sock.sendMessage(from, { 
-          text: `📂 Belum ada mapel di *${activeSem.name}*.\nGunakan \`#add-mapel\` untuk menambah.` 
+      if (subjects.length === 0) return bot.sock.sendMessage(from, {
+        text: `📂 Belum ada mapel di *${activeSem.name}*.\nGunakan \`#mapel\` untuk menambah.`
       });
 
       // 2. Format Tampilan Keren
@@ -35,7 +36,7 @@ module.exports = {
       text += `📅 Semester: *${activeSem.name}*\n`;
       text += `📊 Total: ${subjects.length} Matkul\n`;
       text += `──────────────────────\n`;
-      
+
       subjects.forEach((sub, index) => {
         // Penomoran biar mudah dibaca
         const num = index + 1;
@@ -48,10 +49,10 @@ module.exports = {
       text += `💡 *Kelola Mapel:*\n`;
       text += `• Edit: \`#edit-mapel [ID] [NamaBaru]\`\n`;
       text += `• Hapus: \`#delete-mapel [ID]\``;
-      
+
       await bot.sock.sendMessage(from, { text });
 
-    } catch (e) {   
+    } catch (e) {
       console.error("Error list-mapel:", e);
       await bot.sock.sendMessage(from, { text: "❌ Terjadi kesalahan database." });
     }

@@ -1,12 +1,14 @@
 // src/commands/group/listGrup.js
 module.exports = {
-  name: "#list-grup",
-  description: "Menampilkan daftar tugas kelompok yang tersimpan.",
+  name: "#group-list",
+  alias: ["#grp"],
+  alias: ["#grup-list", "#grp-list"],
+  description: "Show saved group archive.",
   execute: async (bot, from, sender, args, msg) => {
     try {
       // 1. Cari Kelas (Dual Group Check)
       const kelas = await bot.db.prisma.class.findFirst({
-          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
 
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
@@ -27,10 +29,10 @@ module.exports = {
       let text = `📂 *RIWAYAT PEMBAGIAN KELOMPOK*\n`;
       text += `🏫 Kelas: *${kelas.name}*\n`;
       text += `╰──────────────────────\n`;
-      
+
       assignments.forEach((tugas) => {
         const tgl = tugas.createdAt.toLocaleDateString("id-ID", { day: 'numeric', month: 'short', year: 'numeric' });
-        
+
         text += `\n🆔 *ID: ${tugas.id}* | 📅 ${tgl}\n`;
         text += `📚 *${tugas.judul}*\n`;
         text += `👥 Total: ${tugas._count.subGroups} Kelompok\n`;
@@ -38,7 +40,7 @@ module.exports = {
       });
 
       text += `\n\n💡 *Lihat Detail:* \`#detail-grup [ID]\``;
-      
+
       await bot.sock.sendMessage(from, { text });
 
     } catch (e) {

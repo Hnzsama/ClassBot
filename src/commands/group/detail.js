@@ -1,6 +1,7 @@
 module.exports = {
-  name: "#detail-grup",
-  description: "Lihat detail pembagian kelompok. Format: #detail-grup [ID Arsip]",
+  name: "#group-info",
+  alias: ["#grup-detail", "#grp-detail"],
+  description: "View group detail. Format: #group-info [Archive ID]",
   execute: async (bot, from, sender, args, msg) => {
     if (args.length === 0) {
       return await bot.sock.sendMessage(from, { text: "⚠️ Masukkan ID Arsip. Cek di `#list-grup`." });
@@ -11,7 +12,7 @@ module.exports = {
 
     try {
       const kelas = await bot.db.prisma.class.findFirst({
-          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
@@ -22,8 +23,8 @@ module.exports = {
 
       if (!tugas) return await bot.sock.sendMessage(from, { text: "❌ Data kelompok tidak ditemukan." });
 
-      const tglDibuat = tugas.createdAt.toLocaleDateString("id-ID", { 
-          weekday: 'long', day: 'numeric', month: 'short'
+      const tglDibuat = tugas.createdAt.toLocaleDateString("id-ID", {
+        weekday: 'long', day: 'numeric', month: 'short'
       });
 
       let outputText = `📋 *ARSIP KELOMPOK*\n`;
@@ -36,9 +37,9 @@ module.exports = {
       tugas.subGroups.forEach((sub) => {
         // Ganti kardus 📦 jadi 👥
         outputText += `\n╭── [ 👥 *${sub.namaSubGrup.toUpperCase()}* ]\n`;
-        
+
         if (sub.members.length === 0) {
-           outputText += `╰ (Kosong)\n`;
+          outputText += `╰ (Kosong)\n`;
         } else {
           sub.members.forEach((m, i) => {
             const isLast = i === sub.members.length - 1;

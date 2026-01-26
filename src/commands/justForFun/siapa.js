@@ -1,13 +1,14 @@
 module.exports = {
-  name: "#siapa",
-  description: "Pilih member acak. Format: #siapa [Pertanyaan]",
+  name: "#whois",
+  alias: ["#siapa"],
+  description: "Pick random member. Format: #whois [Question]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
     const question = text.replace("#siapa", "").trim();
-    
+
     if (!question) {
-        return bot.sock.sendMessage(from, { text: "⚠️ Masukkan pertanyaannya.\nContoh: `#siapa yang belum mandi?`" });
+      return bot.sock.sendMessage(from, { text: "⚠️ Masukkan pertanyaannya.\nContoh: `#siapa yang belum mandi?`" });
     }
 
     try {
@@ -20,8 +21,8 @@ module.exports = {
 
       // Kirim pesan dengan mention
       await bot.sock.sendMessage(from, {
-          text: `🤔 *PERTANYAAN:* ${question}\n\n👉 Jawabannya adalah: @${randomParticipant.split("@")[0]}`,
-          mentions: [randomParticipant]
+        text: `🤔 *PERTANYAAN:* ${question}\n\n👉 Jawabannya adalah: @${randomParticipant.split("@")[0]}`,
+        mentions: [randomParticipant]
       });
 
     } catch (e) {

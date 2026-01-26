@@ -1,7 +1,8 @@
 // commands/polling.js
 module.exports = {
-  name: "#polling",
-  description: "Membuat polling baru.",
+  name: "#poll",
+  alias: ["#jajak"],
+  description: "Create a new poll.",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, polls } = bot;
 

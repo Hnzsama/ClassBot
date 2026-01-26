@@ -1,16 +1,17 @@
 // src/commands/reminder/delete.js
 module.exports = {
-  name: "#delete-reminder",
-  description: "Hapus pengingat (Khusus Admin). Format: #delete-reminder [ID]",
+  name: "#reminder-delete",
+  alias: ["#reminder-del"],
+  description: "Delete reminder. Format: #reminder-delete [ID]",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
 
     // 1. Parsing Input (Multiple IDs)
-    // Ambil semua angka dari args (misal: #delete-reminder 12 13 14)
+    // Ambil semua angka dari args (misal: #reminder-del 12 13 14)
     const rawIds = args.map(arg => parseInt(arg)).filter(num => !isNaN(num));
 
     if (rawIds.length === 0) {
-      return bot.sock.sendMessage(from, { text: "⚠️ Masukkan ID angka. Contoh: #delete-reminder 12 13" });
+      return bot.sock.sendMessage(from, { text: "⚠️ Masukkan ID angka. Contoh: #reminder-del 12 13" });
     }
 
     try {

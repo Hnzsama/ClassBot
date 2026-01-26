@@ -1,6 +1,6 @@
 module.exports = {
-  name: "#set-filter",
-  description: "Aktifkan/Matikan filter kata kasar. Format: #set-filter [on/off]",
+  name: "#filter",
+  description: "Aktifkan/Matikan filter kata kasar. Format: #filter [on/off]",
   execute: async (bot, from, sender, args, msg, text) => {
     // Validasi: Hanya admin grup atau Owner yang boleh
     const isOwner = sender.includes(bot.owner);

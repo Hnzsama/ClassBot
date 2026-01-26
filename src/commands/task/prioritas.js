@@ -1,7 +1,8 @@
 // src/commands/tugas/prioritas.js
 module.exports = {
-  name: "#task-prioritas",
-  description: "Analisis cerdas prioritas tugas menggunakan AI.",
+  name: "#task-priority",
+  alias: ["#task-pri"],
+  description: "Analyze task priority via AI.",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model, db } = bot;
 
@@ -15,11 +16,11 @@ module.exports = {
 
       // 1. Validasi Kelas (Dual Group Check)
       const kelas = await db.prisma.class.findFirst({
-        where: { 
-            OR: [
-                { mainGroupId: from },
-                { inputGroupId: from }
-            ]
+        where: {
+          OR: [
+            { mainGroupId: from },
+            { inputGroupId: from }
+          ]
         }
       });
 
@@ -47,10 +48,10 @@ module.exports = {
         const deadlineDate = new Date(t.deadline);
         const diffTime = deadlineDate - now;
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
+
         const timeStatus = diffDays < 0 ? "TERLEWAT" : (diffDays === 0 ? "HARI INI" : `${diffDays} hari lagi`);
         const type = t.isGroupTask ? "KELOMPOK (Butuh Koordinasi)" : "INDIVIDU";
-        
+
         return `- [ID:${t.id}] Mapel: ${t.mapel} | Judul: "${t.judul}" | Status: ${timeStatus} | Tipe: ${type}`;
       }).join("\n");
 
@@ -99,7 +100,7 @@ Jangan gunakan markdown code block. Gunakan format teks WhatsApp berikut:
       const aiText = result.response.text();
 
       // 6. Kirim Hasil
-      await sock.sendMessage(from, { 
+      await sock.sendMessage(from, {
         text: aiText,
         mentions: [sender]
       });

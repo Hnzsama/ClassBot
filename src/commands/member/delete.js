@@ -1,17 +1,18 @@
 // src/commands/member/delete.js
 module.exports = {
-  name: "#delete-member",
-  description: "Hapus member. Format: #delete-member [3 digit NIM]...",
+  name: "#member-delete",
+  alias: ["#member-del"],
+  description: "Delete member. Format: #member-delete [3 digit NIM]...",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
-    
+
     // Filter input: hanya ambil yang angka
     const nimSuffixes = args.filter(arg => !isNaN(arg) && arg.length > 0);
 
     if (nimSuffixes.length === 0) {
-        return bot.sock.sendMessage(from, { 
-            text: "⚠️ *Format Hapus Member*\n\nMasukkan akhiran NIM yang ingin dihapus (bisa banyak).\nContoh: `#delete-member 001 045 112`" 
-        });
+      return bot.sock.sendMessage(from, {
+        text: "⚠️ *Format Hapus Member*\n\nMasukkan akhiran NIM yang ingin dihapus (bisa banyak).\nContoh: `#delete-member 001 045 112`"
+      });
     }
 
     try {
@@ -22,7 +23,7 @@ module.exports = {
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
       const whereClauses = nimSuffixes.map(suffix => ({ nim: { endsWith: suffix } }));
-      
+
       const candidates = await bot.db.prisma.member.findMany({
         where: {
           classId: kelas.id,
@@ -37,9 +38,9 @@ module.exports = {
 
       // 3. Eksekusi Delete Many
       const nimsToDelete = candidates.map(c => c.nim);
-      
+
       const result = await bot.db.prisma.member.deleteMany({
-          where: { nim: { in: nimsToDelete } }
+        where: { nim: { in: nimsToDelete } }
       });
 
       // 4. Laporan Penghapusan
@@ -48,12 +49,12 @@ module.exports = {
       reply += `🏫 Kelas: ${kelas.name}\n`;
       reply += `❌ Total Dihapus: ${result.count} Orang\n`;
       reply += `──────────────────────\n`;
-      
+
       // List nama yang dihapus
       candidates.forEach(c => {
-          reply += `• ~${c.nama}~ (NIM: ${c.nim})\n`;
+        reply += `• ~${c.nama}~ (NIM: ${c.nim})\n`;
       });
-      
+
       reply += `──────────────────────\n`;
       reply += `👤 Admin: @${sender.split("@")[0]}`;
 

@@ -1,6 +1,7 @@
 module.exports = {
-  name: "#info-class",
-  description: "Menampilkan informasi detail kelas & semester aktif.",
+  name: "#class-info",
+  alias: ["#class-info", "#ci"],
+  description: "Check class info & active semester. Format: #class-info",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
 
@@ -21,8 +22,8 @@ module.exports = {
             }
           },
           _count: {
-            select: { 
-              members: true, 
+            select: {
+              members: true,
               tasks: true,
               assignments: true
             }
@@ -31,13 +32,13 @@ module.exports = {
       });
 
       if (!kelas) {
-        return bot.sock.sendMessage(from, { 
-          text: "❌ Grup ini belum terdaftar sebagai kelas.\nKetik `#add-class [Nama]` untuk mendaftar." 
+        return bot.sock.sendMessage(from, {
+          text: "❌ Grup ini belum terdaftar sebagai kelas.\nKetik `#class [Nama]` untuk mendaftar."
         });
       }
 
       // Cek Semester Aktif
-      const activeSem = kelas.semesters[0]; 
+      const activeSem = kelas.semesters[0];
       const semesterName = activeSem ? `✅ ${activeSem.name}` : "⚠️ Belum ada yang aktif";
       const mapelCount = activeSem ? activeSem._count.subjects : 0;
       const semesterId = activeSem ? activeSem.id : "-";
@@ -52,11 +53,11 @@ module.exports = {
       text += `🏷️ Nama: *${kelas.name}*\n`;
       text += `📝 Deskripsi: ${kelas.description || "-"}\n`;
       text += `🆔 ID Sistem: ${kelas.id}\n`;
-      
+
       text += `\n*🔗 Status Koneksi Grup:*\n`;
-      text += `📢 Grup Utama (Output): \`${kelas.mainGroupId}\`\n`; 
-      text += `💬 Grup Komunitas (Input): \`${kelas.inputGroupId || '(Belum Diatur)'}\`\n`; 
-      
+      text += `📢 Grup Utama (Output): \`${kelas.mainGroupId}\`\n`;
+      text += `💬 Grup Komunitas (Input): \`${kelas.inputGroupId || '(Belum Diatur)'}\`\n`;
+
       text += `\n📅 *SEMESTER SAAT INI*\n`;
       text += `Status: ${semesterName}\n`;
       text += `ID Semester: ${semesterId}\n`;
@@ -67,7 +68,7 @@ module.exports = {
       text += `📝 Tugas Pending: ${pendingTasks} tugas\n`;
       text += `🎲 Riwayat Grup: ${kelas._count.assignments} kali\n`;
       text += `──────────────────\n`;
-      text += `_Gunakan #edit-class semester [ID] untuk pindah semester._`;
+      text += `_Gunakan #class-edit semester [ID] untuk pindah semester._`;
 
       await bot.sock.sendMessage(from, { text });
 

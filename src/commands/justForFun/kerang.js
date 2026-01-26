@@ -8,9 +8,10 @@ let IS_ACTIVE = true; // Status ON/OFF Kerang Ajaib
 // ----------------------------------------------------
 
 module.exports = {
-  name: "#kerang-ajaib",
-  description: "Bertanya pada Kerang Ajaib (AI Powered). Format: #kerang-ajaib [Pertanyaan]",
-  
+  name: "#magic-8ball",
+  alias: ["#kerang"],
+  description: "Ask Magic 8-Ball. Format: #magic-8ball [Question]",
+
   // --- EKSEKUSI UTAMA (COMMAND) ---
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
@@ -45,7 +46,7 @@ module.exports = {
           return sock.sendMessage(from, { text: `🐚 *Kerang Ajaib:* ${offMsg}` });
         }
       }
-      
+
       // --- B. Logic UBAH LEVEL ---
       if (arg1 === "sarcasm" || arg1 === "roasting") {
         if (isNaN(level) || level < 1 || level > 10) {
@@ -78,7 +79,7 @@ module.exports = {
 
   // --- EKSEKUSI LANJUTAN (REPLY) ---
   handleReply: async (bot, from, msg, text) => {
-    if (!IS_ACTIVE) return; 
+    if (!IS_ACTIVE) return;
 
     const quotedMsg = msg.message.extendedTextMessage.contextInfo;
     const previousBotResponse = quotedMsg.quotedMessage.conversation || quotedMsg.quotedMessage.extendedTextMessage.text;
@@ -98,20 +99,20 @@ async function generateAnswer(bot, from, msg, inputUser, contextLama) {
       await sock.sendMessage(from, { react: { text: "🐚", key: msg.key } });
 
       let prompt = "";
-      
+
       // 1. CEK TOPIK MU
       const isMufc = /\b(mu|emyu|united|manchester|ten hag|maguire|rashford|onana|ggmu|tsunami trofi)\b/i.test(inputUser);
 
       // Tentukan Tone berdasarkan Level Dinamis
-      let toneInstruction = SARCASM_LEVEL >= 8 
+      let toneInstruction = SARCASM_LEVEL >= 8
         ? "Gunakan bahasa yang sangat kasar, meremehkan, to-the-point, dan menyakitkan hati."
-        : SARCASM_LEVEL >= 5 
+        : SARCASM_LEVEL >= 5
           ? "Gunakan bahasa gaul, sedikit menyebalkan, dan tengil."
           : "Gunakan bahasa sopan dan misterius.";
 
-      let roastInstruction = ROASTING_LEVEL >= 8 
+      let roastInstruction = ROASTING_LEVEL >= 8
         ? "Jika pertanyaan bodoh, hina logikanya. Buat penanya merasa menyesal bertanya."
-        : ROASTING_LEVEL >= 5 
+        : ROASTING_LEVEL >= 5
           ? "Beri sindiran halus jika pertanyaan tidak bermutu."
           : "Jawab dengan bijak tanpa mengejek.";
 
@@ -182,6 +183,6 @@ Instruksi:
     text: `🐚 *Kerang Ajaib Bersabda:*
     
 💬: *${answer}*`,
-    quoted: msg 
+    quoted: msg
   });
 }

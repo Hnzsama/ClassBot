@@ -1,6 +1,7 @@
 module.exports = {
-  name: "#randomgrup",
-  description: "Acak kelompok otomatis. Format: #randomgrup [jumlah] [Judul Tugas]",
+  name: "#group-random",
+  alias: ["#random"],
+  description: "Randomize group. Format: #group-random [count] [Task Title]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, db } = bot;
 
@@ -19,7 +20,7 @@ module.exports = {
 
     try {
       const kelas = await db.prisma.class.findFirst({
-          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
 
       if (!kelas) return await sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
@@ -42,7 +43,7 @@ module.exports = {
 
       const groupsPayload = Array.from({ length: jumlahKelompok }, (_, i) => ({
         namaSubGrup: `Kelompok ${i + 1}`,
-        members: [] 
+        members: []
       }));
 
       shuffled.forEach((member, index) => {
@@ -55,7 +56,7 @@ module.exports = {
         data: {
           judul: judulTugas,
           waGroupId: kelas.mainGroupId,
-          classId: classId, 
+          classId: classId,
           subGroups: {
             create: groupsPayload.map(g => ({
               namaSubGrup: g.namaSubGrup,
@@ -79,12 +80,12 @@ module.exports = {
       savedAssignment.subGroups.forEach((sub) => {
         // Ganti kardus 📦 jadi 👥
         outputText += `\n╭── [ 👥 *${sub.namaSubGrup.toUpperCase()}* (${sub.members.length}) ]\n`;
-        
+
         if (sub.members.length === 0) {
-           outputText += `╰ (Kosong)\n`;
+          outputText += `╰ (Kosong)\n`;
         } else {
           const sortedMembers = sub.members.sort((a, b) => a.nama.localeCompare(b.nama));
-          
+
           sortedMembers.forEach((m, i) => {
             const isLast = i === sortedMembers.length - 1;
             const branch = isLast ? '╰' : '├';
@@ -96,9 +97,9 @@ module.exports = {
       outputText += `\n──────────────────────\n`;
       outputText += `💡 _ID Arsip: #${savedAssignment.id}_`;
 
-      await sock.sendMessage(from, { 
-          text: outputText,
-          mentions: [sender]
+      await sock.sendMessage(from, {
+        text: outputText,
+        mentions: [sender]
       });
 
     } catch (err) {

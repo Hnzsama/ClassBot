@@ -1,6 +1,7 @@
 module.exports = {
-    name: "#tag-urut",
-    description: "Tag semua member berurutan (skip yang dimension). Format: #tag-urut @user1 @user2",
+    name: "#group-tagseq",
+    alias: ["#urut"],
+    description: "Tag members sequentially. Format: #group-tagseq @user1 @user2",
     execute: async (bot, from, sender, args, msg) => {
         if (!from.endsWith("@g.us")) return;
 

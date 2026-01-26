@@ -1,16 +1,17 @@
 // commands/hasilPoll.js
 module.exports = {
-  name: "#hasilpoll",
-  description: "Melihat hasil polling saat ini.",
+  name: "#poll-result",
+  alias: ["#hasil"],
+  description: "Show polling result.",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, polls } = bot;
 
     const quotedMsgId =
       msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
-    
+
     if (!quotedMsgId) {
-      await sock.sendMessage(from, { 
-        text: "Silakan reply pesan polling yang ingin Anda lihat hasilnya." 
+      await sock.sendMessage(from, {
+        text: "Silakan reply pesan polling yang ingin Anda lihat hasilnya."
       });
       return;
     }

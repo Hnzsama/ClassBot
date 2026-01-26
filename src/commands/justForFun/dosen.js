@@ -1,12 +1,13 @@
 module.exports = {
-  name: "#tanya-dosen",
-  description: "Tanya AI dengan persona Dosen. Format: #tanya-dosen [Pertanyaan]",
+  name: "#lecturer",
+  alias: ["#dosen"],
+  description: "Chat with Lecturer Persona AI. Format: #lecturer [Question]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
-    
+
     const question = text.replace("#tanya-dosen", "").trim();
     if (!question) return sock.sendMessage(from, { text: "👨‍🏫 *Dosen:* \"Mana pertanyaannya? Jangan buang waktu bapak.\"" });
-    
+
     if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });
 
     try {
@@ -25,9 +26,9 @@ module.exports = {
       const result = await model.generateContent(prompt);
       const response = result.response.text().trim();
 
-      await sock.sendMessage(from, { 
-          text: `👨‍🏫 *DOSEN BOT MENJAWAB:*\n──────────────────\n${response}`,
-          mentions: [sender]
+      await sock.sendMessage(from, {
+        text: `👨‍🏫 *DOSEN BOT MENJAWAB:*\n──────────────────\n${response}`,
+        mentions: [sender]
       });
 
     } catch (e) {

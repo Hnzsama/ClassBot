@@ -5,26 +5,27 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 const MEDIA_DIR = path.join(process.cwd(), 'media_tasks');
 if (!fs.existsSync(MEDIA_DIR)) {
-    fs.mkdirSync(MEDIA_DIR, { recursive: true });
+  fs.mkdirSync(MEDIA_DIR, { recursive: true });
 }
 
 module.exports = {
-  name: "#add-task",
-  description: "Tambah tugas baru (Interaktif). Reply media untuk lampiran.",
+  name: "#task-add",
+  alias: ["#task"],
+  description: "Add task. Format: #task-add [Name 1], [Name 2]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
     const userNumber = sender.split("@")[0];
 
     // Cek Sesi Aktif
     if (bot.sessions.has(sender)) {
-      return bot.sock.sendMessage(from, { 
+      return bot.sock.sendMessage(from, {
         text: `⏳ @${userNumber}, kamu masih punya sesi input yang belum selesai.\nSelesaikan dulu atau ketik *batal*.`,
         mentions: [sender]
       });
     }
 
     if (text.includes("|")) {
-       return bot.sock.sendMessage(from, { text: "💡 Gunakan `#add-task` saja untuk mode tanya-jawab. Jangan pakai tanda pipa (|)." });
+      return bot.sock.sendMessage(from, { text: "💡 Gunakan `#task` saja untuk mode tanya-jawab. Jangan pakai tanda pipa (|)." });
     }
 
     // --- LOGIKA DOWNLOAD LAMPIRAN ---
@@ -35,32 +36,32 @@ module.exports = {
     if (quotedContext && quotedContext.quotedMessage) {
       const mediaKeys = ['imageMessage', 'videoMessage', 'documentMessage', 'audioMessage'];
       const mediaType = mediaKeys.find(key => quotedContext.quotedMessage[key]);
-      
+
       if (mediaType) {
         try {
-            const mediaMessage = quotedContext.quotedMessage[mediaType];
-            const quotedMessageObject = {
-                key: { remoteJid: from, id: quotedContext.stanzaId, participant: quotedContext.participant },
-                message: quotedContext.quotedMessage 
-            };
-            
-            const stream = await downloadMediaMessage(quotedMessageObject, 'buffer', {});
-            const extension = mediaMessage.mimetype.split('/')[1] || 'bin';
-            const fileName = `${Date.now()}_${mediaMessage.fileSha256?.toString('hex').substring(0, 8) || 'file'}.${extension}`;
-            const localFilePath = path.join(MEDIA_DIR, fileName);
+          const mediaMessage = quotedContext.quotedMessage[mediaType];
+          const quotedMessageObject = {
+            key: { remoteJid: from, id: quotedContext.stanzaId, participant: quotedContext.participant },
+            message: quotedContext.quotedMessage
+          };
 
-            fs.writeFileSync(localFilePath, stream);
-            
-            attachmentData = JSON.stringify({
-                type: mediaType,
-                mimetype: mediaMessage.mimetype,
-                localFilePath: localFilePath
-            });
-            attachmentNote = "\n📎 *Lampiran File Tersimpan!*";
+          const stream = await downloadMediaMessage(quotedMessageObject, 'buffer', {});
+          const extension = mediaMessage.mimetype.split('/')[1] || 'bin';
+          const fileName = `${Date.now()}_${mediaMessage.fileSha256?.toString('hex').substring(0, 8) || 'file'}.${extension}`;
+          const localFilePath = path.join(MEDIA_DIR, fileName);
+
+          fs.writeFileSync(localFilePath, stream);
+
+          attachmentData = JSON.stringify({
+            type: mediaType,
+            mimetype: mediaMessage.mimetype,
+            localFilePath: localFilePath
+          });
+          attachmentNote = "\n📎 *Lampiran File Tersimpan!*";
 
         } catch (e) {
-            console.error("Gagal download lampiran:", e);
-            attachmentNote = "\n⚠️ *Gagal menyimpan lampiran*. Lanjut tanpa file.";
+          console.error("Gagal download lampiran:", e);
+          attachmentNote = "\n⚠️ *Gagal menyimpan lampiran*. Lanjut tanpa file.";
         }
       }
     }
@@ -75,7 +76,7 @@ module.exports = {
       if (!kelas || kelas.semesters.length === 0) return bot.sock.sendMessage(from, { text: "❌ Kelas belum siap. Pastikan semester aktif sudah diset." });
 
       const subjects = kelas.semesters[0].subjects;
-      if (subjects.length === 0) return bot.sock.sendMessage(from, { text: "📂 Belum ada mata kuliah. Tambahkan dulu pakai `#add-mapel`." });
+      if (subjects.length === 0) return bot.sock.sendMessage(from, { text: "📂 Belum ada mata kuliah. Tambahkan dulu pakai `#mapel`." });
 
       // Format List Mapel
       const listMapel = subjects.map((s, i) => `${i + 1}. ${s.name}`).join("\n");
@@ -86,11 +87,11 @@ module.exports = {
         groupId: from,
         step: 1,
         classId: kelas.id,
-        data: { attachmentData: attachmentData } 
+        data: { attachmentData: attachmentData }
       });
 
       // 3. Pesan Pembuka Interaktif
-      await bot.sock.sendMessage(from, { 
+      await bot.sock.sendMessage(from, {
         text: `📝 *INPUT TUGAS BARU*${attachmentNote}
 ─────────────────────
 Halo @${userNumber}! Mari kita catat tugas baru.

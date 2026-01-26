@@ -1,315 +1,157 @@
+const fs = require('fs');
+const path = require('path');
+
+// Mapping Category ID (from args) -> Folder Name (in src/commands)
+const CATEGORY_MAP = {
+  'kelas': 'class',
+  'semester': 'semester',
+  'mapel': 'subject',
+  'subject': 'subject',
+  'tugas': 'task',
+  'task': 'task',
+  'reminder': 'reminder',
+  'member': 'member',
+  'util': 'group', // Assuming utils are in group or spread
+  'fun': 'justForFun',
+  'ai': 'justForFun', // Grouping AI fun stuff here
+  'admin': 'admin'
+};
+
+// Helper: Scan commands in directory
+const getCommandsInFolder = (folderName) => {
+  const cmdDir = path.join(__dirname, folderName);
+  if (!fs.existsSync(cmdDir)) return [];
+
+  const files = fs.readdirSync(cmdDir).filter(f => f.endsWith('.js'));
+  const commands = [];
+
+  for (const file of files) {
+    try {
+      const cmdPath = path.join(cmdDir, file);
+      // Delete cache to ensure fresh load (optional, be careful in prod)
+      delete require.cache[require.resolve(cmdPath)];
+      const cmd = require(cmdPath);
+      if (cmd.name && cmd.description) {
+        commands.push({ name: cmd.name, desc: cmd.description });
+      }
+    } catch (e) {
+      console.error(`Skipping command ${file}:`, e.message);
+    }
+  }
+  return commands;
+};
+
 module.exports = {
   name: "#help",
   description: "Pusat bantuan bot. Format: #help [kategori]",
   execute: async (bot, from, sender, args, msg) => {
     const { sock } = bot;
     const pushName = msg.pushName || sender.split("@")[0];
+    const categoryInput = args[0] ? args[0].toLowerCase() : "";
 
-    const category = args[0] ? args[0].toLowerCase() : "";
+    // --- 1. STATIC GUIDES (Panduan Manual) ---
 
-    // ============================================================
-    // 1. SUB-MENU: SETUP
-    // ============================================================
-    if (category === "setup" || category === "panduan") {
-      const text = `⚙️ *PANDUAN SETUP ADMIN*
+    // SETUP
+    if (categoryInput === "setup" || categoryInput === "panduan") {
+      const text = `⚙️ *ADMIN SETUP GUIDE*
 
-*1. BUAT KELAS (Di Grup Utama)*
-Ketik: \`#add-class [Nama], [Deskripsi]\`
-_(Gunakan koma sebagai pemisah)_
+*1. CREATE CLASS (In Main Group)*
+Type: \`#class-add [Name], [Description]\`
+_(Use comma to separate)_
 
-*2. KURIKULUM (Semester & Mapel)*
-Ketik: \`#semester-ai Buatkan semester 1 sampai 8 lalu aktifkan semester 1\`
-Ketik: \`#mapel-ai Tambahkan mapel Matematika, Algoritma, Basis Data\`
+*2. CURRICULUM (Semester & Subjects)*
+Type: \`#semester-ai Create semesters 1 to 8 then activate semester 1\`
+Type: \`#subject-ai Add subjects Math, Algorithms, Database\`
 
-*3. DATA MAHASISWA*
-Ketik: \`#add-member-ai\`
-_(Lalu kirim foto absensi/list nama)_
+*3. STUDENT DATA*
+Type: \`#member-add-ai\`
+_(Then send attendance photo/name list)_
 
-_Ketik_ \`#help\` _untuk kembali._`;
+_Type_ \`#help\` _to return._`;
       return await sock.sendMessage(from, { text });
     }
 
-    // ============================================================
-    // 2. SUB-MENU: COMMUNITY
-    // ============================================================
-    if (category === "community") {
-      const text = `🌐 *BANTUAN: COMMUNITY GROUP*
-Pisahkan Grup Info (Output) & Grup Chat (Input).
+    // COMMUNITY
+    if (categoryInput === "community") {
+      const text = `🌐 *COMMUNITY GROUP GUIDE*
 
-*PERINTAH:*
-├ \`#add-class [Nama], [Deskripsi]\`
-│ (Jalankan di Grup Utama/Info).
+*COMMANDS:*
+├ \`#class-add [Name], [Description]\`
+│ (Run in Main Group/Info Channel).
 │
-╰ \`#assign-class [Class ID] [Main Group ID]\`
-  (Jalankan di Grup Komunitas/Chat).
+╰ \`#class-assign [Class ID] [Main Group ID]\`
+  (Run in Community/Chat Group).
 
-_Ketik_ \`#help\` _untuk kembali._`;
+_Type_ \`#help\` _to return._`;
       return await sock.sendMessage(from, { text });
     }
 
-    // ============================================================
-    // 3. SUB-MENU: KELAS
-    // ============================================================
-    if (category === "kelas") {
-      const text = `🏫 *BANTUAN: MANAJEMEN KELAS*
+    // --- 2. DYNAMIC COMMAND LISTS ---
 
-╭── [ *Perintah Kelas* ]
-│
-├ \`#info-class\`
-│ Cek status kelas & statistik.
-│
-├ \`#add-class [Nama], [Deskripsi]\`
-│ Daftar kelas baru (Gunakan Koma).
-│
-├ \`#edit-class nama [Baru]\`
-│ Ubah nama kelas (Gunakan Spasi).
-│
-╰ \`#edit-class semester [ID]\`
-  Pindah/Aktifkan semester baru.
+    const targetFolder = CATEGORY_MAP[categoryInput];
 
-_Ketik_ \`#help\` _untuk kembali._`;
-      return await sock.sendMessage(from, { text });
+    if (targetFolder) {
+      const cmds = getCommandsInFolder(targetFolder);
+
+      if (cmds.length === 0) {
+        return await sock.sendMessage(from, { text: `⚠️ Belum ada perintah di kategori *${categoryInput}*.` });
+      }
+
+      // Format List
+      const headerMap = {
+        'class': '🏫 MANAJEMEN KELAS',
+        'semester': '📅 SEMESTER UTAMA',
+        'subject': '📚 MATA KULIAH',
+        'task': '📝 TUGAS & PR',
+        'reminder': '🔔 PENGINGAT / REMINDER',
+        'member': '👥 MEMBER MANAGEMENT',
+        'justForFun': '🤖 AI & HIBURAN',
+        'group': '🌐 GROUP UTILITIES',
+        'admin': '👮 ADMIN TOOLS'
+      };
+
+      const header = headerMap[targetFolder] || categoryInput.toUpperCase();
+      let cmdListText = `╭── [ *${header}* ]\n│\n`;
+
+      // Sort by length of name to look tidy? Or Alphabetical?
+      cmds.sort((a, b) => a.name.localeCompare(b.name));
+
+      cmds.forEach(c => {
+        cmdListText += `├ \`${c.name}\`\n│ ${c.desc}\n│\n`;
+      });
+
+      // Close box
+      cmdListText = cmdListText.substring(0, cmdListText.length - 2); // remove last newline+bar
+      cmdListText += `\n╰ _Total: ${cmds.length} Perintah_\n\n_Ketik_ \`#help\` _untuk kembali._`;
+
+      const finalMsg = `${header} COMMANDS\n\n${cmdListText}`;
+
+      return await sock.sendMessage(from, { text: finalMsg });
     }
 
-    // ============================================================
-    // 4. SUB-MENU: SEMESTER
-    // ============================================================
-    if (category === "semester") {
-      const text = `📅 *BANTUAN: SEMESTER*
-
-╭── [ *AI Manager (Rekomendasi)* ]
-│
-╰ \`#semester-ai [Instruksi Natural]\`
-  Contoh: "Buatkan semester 1-8 lalu aktifkan smt 3"
-  Contoh: "Ganti nama semester 9 jadi Skripsi"
-
-╭── [ *Manual* ]
-│
-├ \`#list-semester\`
-│ Lihat daftar semester.
-│
-├ \`#add-semester [Nama 1], [Nama 2]\`
-│ Tambah manual (Batch dg Koma).
-│
-├ \`#edit-semester [ID] status 1\`
-│ Aktifkan semester (Gunakan Spasi).
-│
-╰ \`#delete-semester [ID]\`
-  Hapus semester.
-
-_Ketik_ \`#help\` _untuk kembali._`;
-      return await sock.sendMessage(from, { text });
-    }
-
-    // ============================================================
-    // 5. SUB-MENU: MAPEL
-    // ============================================================
-    if (category === "mapel") {
-      const text = `📚 *BANTUAN: MATA KULIAH*
-
-╭── [ *AI Manager (Rekomendasi)* ]
-│
-╰ \`#mapel-ai [Instruksi/Foto]\`
-  Reply foto jadwal atau ketik perintah:
-  "Tambah Algoritma dan Pkn, hapus Matematika"
-
-╭── [ *Manual* ]
-│
-├ \`#list-mapel\`
-│ Lihat daftar mapel.
-│
-├ \`#add-mapel [Nama 1], [Nama 2]\`
-│ Tambah manual (Batch dg Koma).
-│
-├ \`#edit-mapel [ID] [Nama Baru]\`
-│ Edit nama mapel (Gunakan Spasi).
-│
-╰ \`#delete-mapel [ID]\`
-  Hapus mapel.
-
-_Ketik_ \`#help\` _untuk kembali._`;
-      return await sock.sendMessage(from, { text });
-    }
-
-    // ============================================================
-    // 6. SUB-MENU: TUGAS
-    // ============================================================
-    if (category === "tugas" || category === "task") {
-      const text = `📝 *BANTUAN: TUGAS / PR*
-(Auto Close: Tugas otomatis selesai jika waktu habis)
-
-╭── [ *Laporan Selesai (AI)* ]
-│
-╰ \`#selesai [Nama Tugas]\` (🆕)
-  Setor tugas dengan bukti gambar.
-  Kirim foto/ss dengan caption perintah ini.
-  _Contoh: Kirim foto buku + caption "#selesai Algo"_
-
-╭── [ *AI Manager (Admin)* ]
-│
-╰ \`#task-ai [Instruksi/Foto]\`
-  "Tambah tugas Algo deadline besok judul Array"
-  "Hapus tugas Pkn"
-
-╭── [ *Manual* ]
-│
-├ \`#list-task (all/done)\`
-│ Lihat daftar tugas.
-│
-├ \`#add-task\`
-│ Mode Tanya-Jawab Interaktif.
-│
-├ \`#detail-task [ID]\`
-│ Cek detail & lampiran.
-│
-├ \`#task-status [ID] done\`
-│ Tandai selesai (Manual Admin).
-│
-├ \`#edit-task [ID] [Opsi] [Nilai]\`
-│ Edit data (Gunakan Spasi).
-│
-╰ \`#delete-task [ID]\`
-  Hapus tugas & filenya.
-
-_Ketik_ \`#help\` _untuk kembali._`;
-      return await sock.sendMessage(from, { text });
-    }
-
-    // ============================================================
-    // 7. SUB-MENU: REMINDER
-    // ============================================================
-    if (category === "reminder") {
-      const text = `🔔 *BANTUAN: REMINDER*
-Pengingat umum (Jadwal, Zoom, Kas).
-
-╭── [ *AI Manager (Rekomendasi)* ]
-│
-╰ \`#reminder-ai [Instruksi Natural]\`
-  "Ingatkan futsal jam 4 sore tiap selasa"
-  "Ingetin tugas Alpro besok jam 8"
-
-╭── [ *Manual* ]
-│ Gunakan Koma ( , ) untuk ADD.
-│
-├ \`#list-reminder\`
-│ Lihat antrean pengingat.
-│
-├ \`#reminder [Pesan], [Waktu]\`
-│ Manual. Format: YYYY-MM-DD HH:mm.
-│
-├ \`#reminder [Pesan], [Start], [Interval], [End]\`
-│ Manual Berulang (5m, 1h, 1d).
-│ Contoh: \`#reminder Piket, 2025-11-20 07:00, 1d, 2025-11-25\`
-│
-├ \`#edit-reminder [ID] [Opsi] [Nilai]\`
-│ Edit data reminder (Gunakan Spasi).
-│
-╰ \`#delete-reminder [ID]\`
-  Hapus pengingat (Bisa banyak: ID1 ID2).
-
-_Ketik_ \`#help\` _untuk kembali._`;
-      return await sock.sendMessage(from, { text });
-    }
-
-    // ============================================================
-    // 8. SUB-MENU: MEMBER
-    // ============================================================
-    if (category === "member" || category === "util") {
-      const text = `👥 *BANTUAN: MEMBER & UTILS*
-
-╭── [ *Utilitas Grup* ]
-│
-├ \`#hidetag [Pesan]\`
-│ Tag semua member secara tersembunyi.
-│
-├ \`#tag-urut [Ex: @user]\` (🆕)
-│ Tag member berurutan (bisa ada pengecualian).
-│
-╰ \`#randomgrup [Jml] [Judul]\`
-  Acak kelompok belajar.
-
-╭── [ *Manajemen Data* ]
-│
-├ \`#member-ai [Instruksi/Foto]\`
-│ Tambah/Edit data dari foto/teks natural.
-│
-├ \`#list-member\`
-│ Cek data mahasiswa.
-│
-├ \`#add-member\`
-│ Input banyak: NIM, Nama (Koma).
-│
-╰ \`#delete-member [NIM]\`
-  Hapus member.
-
-_Ketik_ \`#help\` _untuk kembali._`;
-      return await sock.sendMessage(from, { text });
-    }
-
-    // ============================================================
-    // 9. SUB-MENU: FUN (AI & EDUKASI)
-    // ============================================================
-    if (category === "fun" || category === "seru" || category === "ai") {
-      const text = `🤖 *BANTUAN: AI & EDUKASI*
-
-╭── [ *🎓 Asisten Belajar* ]
-│
-├ \`#tanya-dosen [Pertanyaan]\`
-│ Chat dengan AI mode Dosen (Agak killer tapi pintar).
-│
-╰ \`#jelaskan [Materi/Topik]\`
-  Minta penjelasan materi kuliah yang rumit jadi simpel.
-
-╭── [ *🎲 Hiburan & Games* ]
-│
-├ \`#pantun [Topik]\`
-│ Buat pantun lucu otomatis.
-│
-├ \`#siapa [Pertanyaan]\`
-│ Menuduh member grup secara acak.
-│
-╰ \`#kerang-ajaib [Pertanyaan]\`
-  Ramalan ajaib (Ya/Tidak/Mungkin).
-
-_Ketik_ \`#help\` _untuk kembali._`;
-      return await sock.sendMessage(from, { text });
-    }
-
-    // ============================================================
-    // MENU UTAMA (DEFAULT)
-    // ============================================================
+    // --- 3. MENU UTAMA (DEFAULT) ---
     const text = `🤖 *CLASS BOT ASSISTANT*
 Halo, *${pushName}*! 👋
-Silahkan pilih kategori bantuan di bawah ini:
 
-╭── [ 📌 *MENU KATEGORI* ]
+Ketik \`#help [kategori]\` untuk melihat perintah.
+
+╭── [ 📌 *DAFTAR KATEGORI* ]
 │
 ├ \`#help setup\` (⭐ PENTING)
-│ ⚙️ Panduan Aktivasi Kelas & Member.
 │
-├ \`#help community\`
-│ 🌐 Cara pisah Grup Bot & Grup Utama.
+├ \`#help kelas\`     (Manajemen Kelas)
+├ \`#help semester\`  (Semester Kuliah)
+├ \`#help mapel\`     (Mata Kuliah)
+├ \`#help tugas\`     (Tugas/PR)
+├ \`#help reminder\`  (Pengingat)
+├ \`#help member\`    (Data Mahasiswa)
+├ \`#help util\`      (Tagging, Sticker, dll)
+├ \`#help fun\`       (AI, Games, Hiburan)
 │
-├ \`#help tugas\`
-│ 📝 Lapor Selesai (AI), List Tugas.
-│
-├ \`#help reminder\`
-│ 🔔 Pengingat Umum (Sekali/Berulang).
-│
-├ \`#help semester\`
-│ 📅 Ganti Semester, Tambah Semester.
-│
-├ \`#help mapel\`
-│ 📚 Tambah, Edit, Hapus Mata Kuliah.
-│
-├ \`#help member\`
-│ 👥 Hidetag, Absensi, Acak Kelompok.
-│
-╰ \`#help fun\`
-  🎲 Fitur AI, Dosen Bot, & Games.
+╰ \`#help community\` (Grup Community)
 
 ──────────────
-*Created by Luqman Oy Oy*`;
+*Dynamic Command List v2.0*`;
 
     await sock.sendMessage(from, {
       text: text,

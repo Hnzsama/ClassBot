@@ -1,6 +1,7 @@
 module.exports = {
-  name: "#roasting",
-  description: "Minta AI me-roasting kamu atau temanmu. Format: #roasting [@tag]",
+  name: "#roast",
+  alias: ["#ledek"],
+  description: "Roast your friend. Format: #roast [@tag]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
     if (!model) return;
@@ -32,7 +33,7 @@ module.exports = {
       const result = await model.generateContent(prompt);
       const response = await result.response.text();
 
-      await sock.sendMessage(from, { 
+      await sock.sendMessage(from, {
         text: `🔥 *ROASTING TIME* 🔥\n\nUntuk: @${targetName}\n\n"${response}"`,
         mentions: mentionedJid.length > 0 ? mentionedJid : [sender]
       });

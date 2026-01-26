@@ -1,33 +1,34 @@
 module.exports = {
-  name: "#assign-class",
-  description: "Menetapkan grup ini sebagai grup input bot untuk kelas tertentu. Format: #assign-class [Class ID] [Main Group ID]",
+  name: "#class-assign",
+  alias: ["#class-assign", "#ca"],
+  description: "Assign this group as input group for class. Format: #class-assign [Class ID] [Main Group ID]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
     // Validasi Argumen
     if (args.length !== 2) {
-        return await bot.sock.sendMessage(from, { 
-            text: "⚠️ Format Salah. Harap berikan Class ID dan Main Group ID sebagai *dua* argumen terpisah.\nUsage: `#assign-class [ID] [JID]`" 
-        });
+      return await bot.sock.sendMessage(from, {
+        text: "⚠️ Format Salah. Harap berikan Class ID dan Main Group ID sebagai *dua* argumen terpisah.\nUsage: `#class-assign [ID] [JID]`"
+      });
     }
 
     const classId = parseInt(args[0]);
     const mainJid = args[1] || null;
 
     if (isNaN(classId)) {
-        return await bot.sock.sendMessage(from, { text: "⚠️ Class ID harus berupa angka." });
+      return await bot.sock.sendMessage(from, { text: "⚠️ Class ID harus berupa angka." });
     }
-    
+
     // Check JID validity
     if (!mainJid || !mainJid.includes('@g.us')) {
-        return await bot.sock.sendMessage(from, { text: "❌ Main Group ID tidak valid (Pastikan berakhiran @g.us)." });
+      return await bot.sock.sendMessage(from, { text: "❌ Main Group ID tidak valid (Pastikan berakhiran @g.us)." });
     }
-    
+
 
     try {
       // Cek apakah Class ID valid dan Main JID cocok
-      const kelas = await bot.db.prisma.class.findUnique({ 
-        where: { id: classId, mainGroupId: mainJid } 
+      const kelas = await bot.db.prisma.class.findUnique({
+        where: { id: classId, mainGroupId: mainJid }
       });
 
       if (!kelas) {
@@ -43,11 +44,11 @@ module.exports = {
           ]
         }
       });
-      
+
       if (exist) {
-          return await bot.sock.sendMessage(from, { 
-              text: `❌ Gagal. Grup ini sudah terdaftar sebagai grup output atau grup input untuk kelas lain.` 
-          });
+        return await bot.sock.sendMessage(from, {
+          text: `❌ Gagal. Grup ini sudah terdaftar sebagai grup output atau grup input untuk kelas lain.`
+        });
       }
 
       // Update Input Group ID pada Class yang sudah ada
@@ -61,8 +62,8 @@ module.exports = {
       reply += `🏫 Kelas: *${kelas.name}*\n`;
       reply += `📢 Output Utama: *Grup Utama Kelas*\n`;
       reply += `\n✅ *Siap Digunakan!*\n`;
-      reply += `Anda sekarang dapat mengetik perintah bot di sini (seperti #add-task, #info-class), dan notifikasi publik akan dikirim ke Grup Utama.`;
-      
+      reply += `Anda sekarang dapat mengetik perintah bot di sini (seperti #task, #class-info), dan notifikasi publik akan dikirim ke Grup Utama.`;
+
       await bot.sock.sendMessage(from, {
         text: reply,
         mentions: [sender]

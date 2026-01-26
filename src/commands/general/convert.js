@@ -32,7 +32,7 @@ const unwrapMessage = (msg) => {
 };
 
 module.exports = {
-  name: "#convert",
+  name: "#konversi",
   description: "Konversi file (Img/Docx -> PDF, PDF -> Docx)",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock } = bot;

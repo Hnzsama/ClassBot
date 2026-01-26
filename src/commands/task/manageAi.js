@@ -9,69 +9,69 @@ if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
 const parseWIB = (timeStr) => {
     if (!timeStr) return null;
     const cleanTime = timeStr.replace(/[^\d\-: ]/g, "").trim();
-    const isoStart = cleanTime.replace(" ", "T") + ":00+07:00"; 
+    const isoStart = cleanTime.replace(" ", "T") + ":00+07:00";
     const date = new Date(isoStart);
     return isNaN(date.getTime()) ? null : date;
 }
 
 module.exports = {
-  name: "#task-ai",
-  description: "Kelola Tugas (Add/Edit/Del/Link) via AI.",
-  execute: async (bot, from, sender, args, msg, text) => {
-    const { sock, model, db } = bot;
-    if (!from.endsWith("@g.us")) return;
-    
-    let rawInput = text.replace("#task-ai", "").trim();
-    
-    // --- 1. DETEKSI MEDIA ---
-    const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-    let mediaPart = null; let hasMedia = false; let attachData = null;
-    
-    const isAttachMode = rawInput.includes("--lampiran");
-    rawInput = rawInput.replace("--lampiran", "").trim();
+    name: "#task-ai",
+    description: "Manage Tasks Complete (Add/Edit/Del/Link/etc) via AI.",
+    execute: async (bot, from, sender, args, msg, text) => {
+        const { sock, model, db } = bot;
+        if (!from.endsWith("@g.us")) return;
 
-    if (quotedMsg) {
-        const type = Object.keys(quotedMsg).find(k => ['imageMessage','videoMessage','documentMessage'].includes(k));
-        if (type) {
-            try {
-                const buffer = await downloadMediaMessage({ key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg }, 'buffer', {});
-                if (isAttachMode) {
-                    const ext = quotedMsg[type].mimetype.split('/')[1] || 'bin';
-                    const fName = `${Date.now()}_ai.${ext}`;
-                    fs.writeFileSync(path.join(MEDIA_DIR, fName), buffer);
-                    attachData = JSON.stringify({ type, mimetype: quotedMsg[type].mimetype, localFilePath: path.join(MEDIA_DIR, fName) });
-                } else {
-                    mediaPart = { inlineData: { data: buffer.toString("base64"), mimeType: "image/jpeg" } };
-                    hasMedia = true;
-                }
-            } catch (e) { return sock.sendMessage(from, { text: "❌ Gagal download media." }); }
+        let rawInput = text.replace("#task-ai", "").trim();
+
+        // --- 1. DETEKSI MEDIA ---
+        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        let mediaPart = null; let hasMedia = false; let attachData = null;
+
+        const isAttachMode = rawInput.includes("--lampiran");
+        rawInput = rawInput.replace("--lampiran", "").trim();
+
+        if (quotedMsg) {
+            const type = Object.keys(quotedMsg).find(k => ['imageMessage', 'videoMessage', 'documentMessage'].includes(k));
+            if (type) {
+                try {
+                    const buffer = await downloadMediaMessage({ key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg }, 'buffer', {});
+                    if (isAttachMode) {
+                        const ext = quotedMsg[type].mimetype.split('/')[1] || 'bin';
+                        const fName = `${Date.now()}_ai.${ext}`;
+                        fs.writeFileSync(path.join(MEDIA_DIR, fName), buffer);
+                        attachData = JSON.stringify({ type, mimetype: quotedMsg[type].mimetype, localFilePath: path.join(MEDIA_DIR, fName) });
+                    } else {
+                        mediaPart = { inlineData: { data: buffer.toString("base64"), mimeType: "image/jpeg" } };
+                        hasMedia = true;
+                    }
+                } catch (e) { return sock.sendMessage(from, { text: "❌ Gagal download media." }); }
+            }
         }
-    }
 
-    if (!rawInput && !hasMedia) return sock.sendMessage(from, { text: "⚠️ Masukkan instruksi atau foto soal." });
-    if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });
+        if (!rawInput && !hasMedia) return sock.sendMessage(from, { text: "⚠️ Masukkan instruksi atau foto soal." });
+        if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });
 
-    try {
-      // --- 2. CEK KELAS ---
-      const kelas = await db.prisma.class.findFirst({ where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }, include: { semesters: { where: { isActive: true }, include: { subjects: { orderBy: { name: 'asc' } } } } } });
-      if (!kelas) return sock.sendMessage(from, { text: "❌ Kelas belum siap." });
+        try {
+            // --- 2. CEK KELAS ---
+            const kelas = await db.prisma.class.findFirst({ where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }, include: { semesters: { where: { isActive: true }, include: { subjects: { orderBy: { name: 'asc' } } } } } });
+            if (!kelas) return sock.sendMessage(from, { text: "❌ Kelas belum siap." });
 
-      await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
+            await sock.sendMessage(from, { react: { text: "🧠", key: msg.key } });
 
-      // --- 3. CONTEXT INJECTION ---
-      const subjectsList = kelas.semesters[0].subjects.map(s => s.name).join(", ");
-      const pendingTasks = await db.prisma.task.findMany({ where: { classId: kelas.id, status: 'Pending' }, take: 30 });
-      
-      // Context diperjelas agar AI bisa mapping "litdig" -> "Literasi Digital"
-      const taskContext = pendingTasks.map(t => `ID:${t.id} | Mapel:${t.mapel} | Judul:"${t.judul}"`).join("\n");
-      
-      const now = new Date();
-      const fmtDate = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
-      const todayStr = fmtDate(now);
-      const besokStr = fmtDate(new Date(now.setDate(now.getDate() + 1)));
-      const lusaStr = fmtDate(new Date(now.setDate(now.getDate() + 1))); 
+            // --- 3. CONTEXT INJECTION ---
+            const subjectsList = kelas.semesters[0].subjects.map(s => s.name).join(", ");
+            const pendingTasks = await db.prisma.task.findMany({ where: { classId: kelas.id, status: 'Pending' }, take: 30 });
 
-      const systemPrompt = `
+            // Context diperjelas agar AI bisa mapping "litdig" -> "Literasi Digital"
+            const taskContext = pendingTasks.map(t => `ID:${t.id} | Mapel:${t.mapel} | Judul:"${t.judul}"`).join("\n");
+
+            const now = new Date();
+            const fmtDate = (d) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+            const todayStr = fmtDate(now);
+            const besokStr = fmtDate(new Date(now.setDate(now.getDate() + 1)));
+            const lusaStr = fmtDate(new Date(now.setDate(now.getDate() + 1)));
+
+            const systemPrompt = `
       Peran: Task Manager.
       WAKTU: ${todayStr}. BESOK: ${besokStr}. LUSA: ${lusaStr}.
       
@@ -97,164 +97,179 @@ module.exports = {
       [ { "action": "edit", "target": "Literasi Digital", "link": "https://youtube.com" } ]
       `;
 
-      let parts = [systemPrompt];
-      if (hasMedia) { parts.push({ text: `Input: "${rawInput}"` }); parts.push(mediaPart); }
-      else { parts.push({ text: `Input User: "${rawInput}"` }); }
 
-      // --- 4. EXECUTE AI ---
-      const result = await model.generateContent(parts);
-      let actionsList = [];
-      try {
-        const jsonMatch = result.response.text().match(/\[.*?\]/s);
-        actionsList = JSON.parse(jsonMatch[0]);
-      } catch (e) { return sock.sendMessage(from, { text: "❌ AI bingung." }); }
+            // --- 4. EXECUTE AI (Refactored) ---
+            const { generateAIContent } = require('../../utils/aiHandler');
 
-      let report = { add: [], done: [], delete: [], edit: [], errors: [] };
+            let mediaPayload = null;
+            if (mediaPart) {
+                mediaPayload = {
+                    buffer: Buffer.from(mediaPart.inlineData.data, 'base64'),
+                    mimeType: mediaPart.inlineData.mimeType
+                };
+            }
 
-      // --- 5. EXECUTE DB ---
-      for (const item of actionsList) {
-          try {
-              // === DELETE ALL ===
-              if (item.action === 'delete_all') {
-                  const allTasks = await db.prisma.task.findMany({ where: { classId: kelas.id } });
-                  let fileCount = 0;
-                  allTasks.forEach(t => {
-                      if (t.attachmentData) {
-                          try {
-                              const fPath = JSON.parse(t.attachmentData).localFilePath;
-                              if(fs.existsSync(fPath)) { fs.unlinkSync(fPath); fileCount++; }
-                          } catch(e){}
-                      }
-                  });
-                  const deleted = await db.prisma.task.deleteMany({ where: { classId: kelas.id } });
-                  report.delete.push(`SEMUA TUGAS (${deleted.count} item)`);
-                  break; 
-              }
+            let actionsList = [];
+            try {
+                const result = await generateAIContent(model, systemPrompt, `TARGET TASKS:\n${taskContext}\n\nMAPEL: ${subjectsList}\nWAKTU: ${todayStr}`, rawInput, mediaPayload);
+                if (Array.isArray(result)) {
+                    actionsList = result;
+                } else if (result) {
+                    actionsList = [result]; // Handle single object return
+                }
+            } catch (e) {
+                console.error("AI Handler Error:", e);
+                return sock.sendMessage(from, { text: "❌ AI gagal memproses permintaan." });
+            }
 
-              // === ADD ===
-              else if (item.action === 'add' && item.mapel) {
-                  const validMapel = kelas.semesters[0].subjects.find(s => s.name.toLowerCase().includes(item.mapel.toLowerCase()));
-                  const deadlineDate = parseWIB(item.deadline);
+            if (!actionsList || actionsList.length === 0) return sock.sendMessage(from, { text: "⚠️ AI tidak menemukan instruksi yang jelas." });
 
-                  if (validMapel && deadlineDate) {
-                      const finalJudul = (item.judul && item.judul.trim().length > 0 && item.judul !== '-') ? item.judul : `Tugas ${validMapel.name}`;
-                      await db.prisma.task.create({
-                          data: { 
-                              classId: kelas.id, 
-                              mapel: validMapel.name, 
-                              judul: finalJudul, 
-                              deadline: deadlineDate, 
-                              attachmentData: attachData, 
-                              isGroupTask: !!item.isGroup,
-                              link: item.link || "-" 
-                          }
-                      });
-                      const dlStr = deadlineDate.toLocaleString("id-ID", { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-                      report.add.push(`${finalJudul} (${validMapel.name}, DL: ${dlStr})`);
-                  } else {
-                      if(!validMapel) report.errors.push(`Mapel "${item.mapel}" tdk valid`);
-                      if(!deadlineDate) report.errors.push(`Format tgl salah`);
-                  }
-              } 
-              
-              // === DELETE / DONE / EDIT ===
-              else {
-                  // Safe string
-                  const rawTarget = item.target || item.mapel || item.judul;
-                  if (!rawTarget) continue; 
-                  const searchKey = String(rawTarget).toLowerCase().trim();
-                  let target = null;
+            let report = { add: [], done: [], delete: [], edit: [], errors: [] };
 
-                  // A. Cari by ID
-                  if (/^\d+$/.test(searchKey)) {
-                      const searchId = parseInt(searchKey);
-                      target = pendingTasks.find(t => t.id === searchId);
-                  }
+            // --- 5. EXECUTE DB ---
+            for (const item of actionsList) {
+                try {
+                    // === DELETE ALL ===
+                    if (item.action === 'delete_all') {
+                        const allTasks = await db.prisma.task.findMany({ where: { classId: kelas.id } });
+                        let fileCount = 0;
+                        allTasks.forEach(t => {
+                            if (t.attachmentData) {
+                                try {
+                                    const fPath = JSON.parse(t.attachmentData).localFilePath;
+                                    if (fs.existsSync(fPath)) { fs.unlinkSync(fPath); fileCount++; }
+                                } catch (e) { }
+                            }
+                        });
+                        const deleted = await db.prisma.task.deleteMany({ where: { classId: kelas.id } });
+                        report.delete.push(`SEMUA TUGAS (${deleted.count} item)`);
+                        break;
+                    }
 
-                  // B. Cari by Mapel/Judul (Fuzzy Include)
-                  if (!target) {
-                      target = pendingTasks.find(t => 
-                          (t.mapel && t.mapel.toLowerCase().includes(searchKey)) || 
-                          (t.judul && t.judul.toLowerCase().includes(searchKey))
-                      );
-                  }
-                  
-                  if (target) {
-                      if (item.action === 'delete') { 
-                          await db.prisma.task.delete({ where: { id: target.id } }); 
-                          if(target.attachmentData) { try{ fs.unlinkSync(JSON.parse(target.attachmentData).localFilePath) }catch(e){} }
-                          report.delete.push(target.judul); 
-                      }
-                      if (item.action === 'done') { 
-                          await db.prisma.task.update({ where: { id: target.id }, data: { status: 'Selesai' } }); 
-                          report.done.push(target.judul); 
-                      }
-                      // === MODIFIKASI BAGIAN EDIT ===
-                      if (item.action === 'edit') {
-                          let updateData = {};
-                          let isDeadlineChanged = false; // Flag untuk cek perubahan waktu
+                    // === ADD ===
+                    else if (item.action === 'add' && item.mapel) {
+                        const validMapel = kelas.semesters[0].subjects.find(s => s.name.toLowerCase().includes(item.mapel.toLowerCase()));
+                        const deadlineDate = parseWIB(item.deadline);
 
-                          if (item.judul) updateData.judul = item.judul;
-                          if (item.link) updateData.link = item.link; 
-                          
-                          // Cek jika ada input deadline baru
-                          if (item.deadline) {
-                              const newDate = parseWIB(item.deadline);
-                              if (newDate) {
-                                  updateData.deadline = newDate;
-                                  isDeadlineChanged = true;
-                              }
-                          }
+                        if (validMapel && deadlineDate) {
+                            const finalJudul = (item.judul && item.judul.trim().length > 0 && item.judul !== '-') ? item.judul : `Tugas ${validMapel.name}`;
+                            await db.prisma.task.create({
+                                data: {
+                                    classId: kelas.id,
+                                    mapel: validMapel.name,
+                                    judul: finalJudul,
+                                    deadline: deadlineDate,
+                                    attachmentData: attachData,
+                                    isGroupTask: !!item.isGroup,
+                                    link: item.link || "-"
+                                }
+                            });
+                            const dlStr = deadlineDate.toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                            report.add.push(`${finalJudul} (${validMapel.name}, DL: ${dlStr})`);
+                        } else {
+                            if (!validMapel) report.errors.push(`Mapel "${item.mapel}" tdk valid`);
+                            if (!deadlineDate) report.errors.push(`Format tgl salah`);
+                        }
+                    }
 
-                          if (Object.keys(updateData).length > 0) {
-                              // 1. LOGIKA RESET REMINDER
-                              // Jika deadline berubah, hapus semua status reminder lama agar cronjob bisa kirim ulang sesuai jadwal baru
-                              if (isDeadlineChanged) {
-                                  await db.prisma.taskReminderStatus.deleteMany({
-                                      where: { taskId: target.id }
-                                  });
-                              }
+                    // === DELETE / DONE / EDIT ===
+                    else {
+                        // Safe string
+                        const rawTarget = item.target || item.mapel || item.judul;
+                        if (!rawTarget) continue;
+                        const searchKey = String(rawTarget).toLowerCase().trim();
+                        let target = null;
 
-                              // 2. Update Data Task Utama
-                              await db.prisma.task.update({ where: { id: target.id }, data: updateData });
+                        // A. Cari by ID
+                        if (/^\d+$/.test(searchKey)) {
+                            const searchId = parseInt(searchKey);
+                            target = pendingTasks.find(t => t.id === searchId);
+                        }
 
-                              // 3. Susun Log Laporan
-                              let log = target.judul;
-                              if (updateData.link) log += ` (Link Diupdate)`;
-                              
-                              // Tambahkan notifikasi visual bahwa pengingat direset
-                              if (isDeadlineChanged) log += ` (Waktu Diupdate & 🔔 Reminder Direset)`;
-                              
-                              report.edit.push(log);
-                          }
-                      }
-                      // === END MODIFIKASI ===
-                  } else {
-                      report.errors.push(`${item.action}: "${searchKey}" tdk ketemu.`);
-                  }
-              }
-          } catch (e) { console.error(e); report.errors.push(`Err System`); }
-      }
+                        // B. Cari by Mapel/Judul (Fuzzy Include)
+                        if (!target) {
+                            target = pendingTasks.find(t =>
+                                (t.mapel && t.mapel.toLowerCase().includes(searchKey)) ||
+                                (t.judul && t.judul.toLowerCase().includes(searchKey))
+                            );
+                        }
 
-      let reply = `🤖 *LAPORAN OTOMATIS TUGAS*\n──────────────────────\n🏫 Kelas: ${kelas.name}\n\n`;
-      let hasChange = false;
+                        if (target) {
+                            if (item.action === 'delete') {
+                                await db.prisma.task.delete({ where: { id: target.id } });
+                                if (target.attachmentData) { try { fs.unlinkSync(JSON.parse(target.attachmentData).localFilePath) } catch (e) { } }
+                                report.delete.push(target.judul);
+                            }
+                            if (item.action === 'done') {
+                                await db.prisma.task.update({ where: { id: target.id }, data: { status: 'Selesai' } });
+                                report.done.push(target.judul);
+                            }
+                            // === MODIFIKASI BAGIAN EDIT ===
+                            if (item.action === 'edit') {
+                                let updateData = {};
+                                let isDeadlineChanged = false; // Flag untuk cek perubahan waktu
 
-      if (report.add.length) { reply += `✅ *Tugas Baru:*\n` + report.add.map(s => `• ${s}`).join('\n') + `\n\n`; hasChange = true; }
-      if (report.done.length) { reply += `🎉 *Selesai:*\n` + report.done.map(s => `• ~${s}~\n`).join('\n') + `\n\n`; hasChange = true; }
-      if (report.edit.length) { reply += `✏️ *Diupdate:*\n` + report.edit.map(s => `• ${s}`).join('\n') + `\n\n`; hasChange = true; }
-      if (report.delete.length) { reply += `🗑️ *Dihapus:*\n` + report.delete.map(s => `• ~${s}~`).join('\n') + `\n\n`; hasChange = true; }
-      
-      if (!hasChange && report.errors.length === 0) reply += `⚠️ Tidak ada perubahan data.\n`;
-      if (report.errors.length) reply += `⛔ *Log Error:*\n` + report.errors.slice(0,5).map(e => `• ${e}`).join('\n');
-      
-      if (attachData && report.add.length > 0) reply += `\n📎 _Lampiran File Berhasil Disimpan_`;
-      if (hasChange) reply += `\n──────────────────────\n💡 _Cek detail: #list-task_`;
+                                if (item.judul) updateData.judul = item.judul;
+                                if (item.link) updateData.link = item.link;
 
-      await sock.sendMessage(from, { text: reply, mentions: [sender] });
+                                // Cek jika ada input deadline baru
+                                if (item.deadline) {
+                                    const newDate = parseWIB(item.deadline);
+                                    if (newDate) {
+                                        updateData.deadline = newDate;
+                                        isDeadlineChanged = true;
+                                    }
+                                }
 
-    } catch (e) { 
-        console.error("Error task-ai:", e); 
-        await sock.sendMessage(from, { text: "❌ Terjadi kesalahan sistem." });
+                                if (Object.keys(updateData).length > 0) {
+                                    // 1. LOGIKA RESET REMINDER
+                                    // Jika deadline berubah, hapus semua status reminder lama agar cronjob bisa kirim ulang sesuai jadwal baru
+                                    if (isDeadlineChanged) {
+                                        await db.prisma.taskReminderStatus.deleteMany({
+                                            where: { taskId: target.id }
+                                        });
+                                    }
+
+                                    // 2. Update Data Task Utama
+                                    await db.prisma.task.update({ where: { id: target.id }, data: updateData });
+
+                                    // 3. Susun Log Laporan
+                                    let log = target.judul;
+                                    if (updateData.link) log += ` (Link Diupdate)`;
+
+                                    // Tambahkan notifikasi visual bahwa pengingat direset
+                                    if (isDeadlineChanged) log += ` (Waktu Diupdate & 🔔 Reminder Direset)`;
+
+                                    report.edit.push(log);
+                                }
+                            }
+                            // === END MODIFIKASI ===
+                        } else {
+                            report.errors.push(`${item.action}: "${searchKey}" tdk ketemu.`);
+                        }
+                    }
+                } catch (e) { console.error(e); report.errors.push(`Err System`); }
+            }
+
+            let reply = `🤖 *LAPORAN OTOMATIS TUGAS*\n──────────────────────\n🏫 Kelas: ${kelas.name}\n\n`;
+            let hasChange = false;
+
+            if (report.add.length) { reply += `✅ *Tugas Baru:*\n` + report.add.map(s => `• ${s}`).join('\n') + `\n\n`; hasChange = true; }
+            if (report.done.length) { reply += `🎉 *Selesai:*\n` + report.done.map(s => `• ~${s}~\n`).join('\n') + `\n\n`; hasChange = true; }
+            if (report.edit.length) { reply += `✏️ *Diupdate:*\n` + report.edit.map(s => `• ${s}`).join('\n') + `\n\n`; hasChange = true; }
+            if (report.delete.length) { reply += `🗑️ *Dihapus:*\n` + report.delete.map(s => `• ~${s}~`).join('\n') + `\n\n`; hasChange = true; }
+
+            if (!hasChange && report.errors.length === 0) reply += `⚠️ Tidak ada perubahan data.\n`;
+            if (report.errors.length) reply += `⛔ *Log Error:*\n` + report.errors.slice(0, 5).map(e => `• ${e}`).join('\n');
+
+            if (attachData && report.add.length > 0) reply += `\n📎 _Lampiran File Berhasil Disimpan_`;
+            if (hasChange) reply += `\n──────────────────\n💡 _Cek detail: #task-list_`;
+
+            await sock.sendMessage(from, { text: reply, mentions: [sender] });
+
+        } catch (e) {
+            console.error("Error task-ai:", e);
+            await sock.sendMessage(from, { text: "❌ Terjadi kesalahan sistem." });
+        }
     }
-  }
 };

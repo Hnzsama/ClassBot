@@ -3,7 +3,7 @@
 // --- FUNGSI UTAMA DATABASE (SHARED UTILITY) ---
 async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, className, isAI = false) {
     const { sock, db } = bot;
-    
+
     const rawNames = namesArray.map(n => n.trim()).filter(n => n.length > 0);
     if (rawNames.length === 0) {
         return sock.sendMessage(from, { text: "⚠️ Tidak ada nama mata kuliah yang terbaca." });
@@ -14,7 +14,7 @@ async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, classN
         where: { semesterId: semesterId },
         select: { name: true }
     });
-    
+
     // Set nama yang sudah ada (lowercase biar case-insensitive)
     const existingNames = new Set(existingSubjects.map(sub => sub.name.toLowerCase()));
 
@@ -31,7 +31,7 @@ async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, classN
                 semesterId: semesterId,
             });
             addedNames.push(name);
-            existingNames.add(name.toLowerCase()); 
+            existingNames.add(name.toLowerCase());
         }
     });
 
@@ -56,50 +56,51 @@ async function addSubjectsToDb(bot, from, sender, namesArray, semesterId, classN
     }
 
     await sock.sendMessage(from, {
-      text: successMsg,
-      mentions: [sender]
+        text: successMsg,
+        mentions: [sender]
     });
 }
 
 module.exports = {
-  name: "#add-mapel",
-  description: "Tambah mapel. Format: #add-mapel [Nama 1], [Nama 2]",
-  execute: async (bot, from, sender, args, msg, text) => {
-    if (!from.endsWith("@g.us")) return;
+    name: "#subject-add",
+    alias: ["#mapel"],
+    description: "Add subjects. Format: #subject-add [Name 1], [Name 2]",
+    execute: async (bot, from, sender, args, msg, text) => {
+        if (!from.endsWith("@g.us")) return;
 
-    const rawContent = text.replace("#add-mapel", "").trim();
-    
-    if (!rawContent) {
-        return bot.sock.sendMessage(from, { 
-            text: "⚠️ *Format Tambah Mapel*\n\nGunakan koma ( , ) untuk pemisah.\n\nContoh:\n`#add-mapel Basis Data, Aljabar Linear, Bahasa Inggris`" 
-        });
-    }
+        const rawContent = text.replace("#mapel", "").trim();
 
-    try {
-      // 1. Cek Kelas & Semester Aktif
-      const kelas = await bot.db.prisma.class.findFirst({ 
-          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
-          include: { semesters: { where: { isActive: true } } }
-      });
+        if (!rawContent) {
+            return bot.sock.sendMessage(from, {
+                text: "⚠️ *Format Tambah Mapel*\n\nGunakan koma ( , ) untuk pemisah.\n\nContoh:\n`#mapel Basis Data, Aljabar Linear, Bahasa Inggris`"
+            });
+        }
 
-      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
-      
-      const activeSem = kelas.semesters[0]; 
-      if (!activeSem) {
-          return bot.sock.sendMessage(from, { text: "❌ Belum ada Semester Aktif. Gunakan `#add-semester` lalu aktifkan dulu." });
-      }
+        try {
+            // 1. Cek Kelas & Semester Aktif
+            const kelas = await bot.db.prisma.class.findFirst({
+                where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] },
+                include: { semesters: { where: { isActive: true } } }
+            });
 
-      // 2. Parsing Input (Koma atau Enter)
-      const namesToProcess = rawContent.split(/[,\n]+/).map(n => n.trim()).filter(n => n.length > 0);
-      
-      // 3. Panggil Fungsi Database
-      return addSubjectsToDb(bot, from, sender, namesToProcess, activeSem.id, kelas.name, false);
+            if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar." });
 
-    } catch (e) {
-      console.error("Error add-mapel:", e);
-      await bot.sock.sendMessage(from, { text: "❌ Gagal tambah mapel." });
-    }
-  },
-  // Export fungsi ini
-  addSubjectsToDb: addSubjectsToDb 
+            const activeSem = kelas.semesters[0];
+            if (!activeSem) {
+                return bot.sock.sendMessage(from, { text: "❌ Belum ada Semester Aktif. Gunakan `#semester` lalu aktifkan dulu." });
+            }
+
+            // 2. Parsing Input (Koma atau Enter)
+            const namesToProcess = rawContent.split(/[,\n]+/).map(n => n.trim()).filter(n => n.length > 0);
+
+            // 3. Panggil Fungsi Database
+            return addSubjectsToDb(bot, from, sender, namesToProcess, activeSem.id, kelas.name, false);
+
+        } catch (e) {
+            console.error("Error add-mapel:", e);
+            await bot.sock.sendMessage(from, { text: "❌ Gagal tambah mapel." });
+        }
+    },
+    // Export fungsi ini
+    addSubjectsToDb: addSubjectsToDb
 };

@@ -3,32 +3,33 @@
 // --- UTILITIES ---
 // Parsing Waktu WIB (Format: YYYY-MM-DD HH:mm)
 const parseWIB = (timeStr) => {
-    if (!timeStr) return null;
-    const isoStart = timeStr.replace(" ", "T") + ":00+07:00";
-    const date = new Date(isoStart);
-    return isNaN(date.getTime()) ? null : date;
+  if (!timeStr) return null;
+  const isoStart = timeStr.replace(" ", "T") + ":00+07:00";
+  const date = new Date(isoStart);
+  return isNaN(date.getTime()) ? null : date;
 }
 
 // Parsing Interval (m=menit, h=jam, d=hari)
 const parseFlexibleIntervalToMs = (intervalStr) => {
-    const unitMap = {
-        'm': 60000,
-        'h': 3600000,
-        'd': 86400000,
-    };
-    
-    if (typeof intervalStr !== 'string') return null;
-    const value = parseInt(intervalStr);
-    const unit = intervalStr.slice(-1).toLowerCase(); 
+  const unitMap = {
+    'm': 60000,
+    'h': 3600000,
+    'd': 86400000,
+  };
 
-    if (isNaN(value) || value < 1 || !unitMap[unit]) return null; 
-    if (unit === 'm' && value < 1) return null; 
-    return intervalStr; 
+  if (typeof intervalStr !== 'string') return null;
+  const value = parseInt(intervalStr);
+  const unit = intervalStr.slice(-1).toLowerCase();
+
+  if (isNaN(value) || value < 1 || !unitMap[unit]) return null;
+  if (unit === 'm' && value < 1) return null;
+  return intervalStr;
 };
 
 module.exports = {
-  name: "#reminder",
-  description: "Pasang pengingat manual. Format: #reminder Pesan, Waktu, [Interval], [Sampai]",
+  name: "#reminder-add",
+  alias: ["#reminder"],
+  description: "Add reminder. Format: #reminder-add Message, Time, [Interval], [Until]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
@@ -76,19 +77,19 @@ Contoh (Setiap 1 hari):
       const kelas = await bot.db.prisma.class.findFirst({
         where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
-      
+
       if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Grup ini belum terdaftar sebagai kelas." });
 
       // 5. Validasi Waktu Mulai
       const waktuMulai = parseWIB(waktuStr);
       if (!waktuMulai) {
-          return bot.sock.sendMessage(from, { 
-              text: `❌ *Format Waktu Salah*\n\nInput: "${waktuStr}"\nHarus: YYYY-MM-DD HH:mm\n\n_Pastikan tidak ada koma di dalam pesan._` 
-          });
+        return bot.sock.sendMessage(from, {
+          text: `❌ *Format Waktu Salah*\n\nInput: "${waktuStr}"\nHarus: YYYY-MM-DD HH:mm\n\n_Pastikan tidak ada koma di dalam pesan._`
+        });
       }
-      
+
       if (waktuMulai < new Date()) {
-          return bot.sock.sendMessage(from, { text: "⚠️ Waktu mulai sudah lewat. Gunakan waktu masa depan." });
+        return bot.sock.sendMessage(from, { text: "⚠️ Waktu mulai sudah lewat. Gunakan waktu masa depan." });
       }
 
       // 6. Logic Berulang (Repeatable)
@@ -101,13 +102,13 @@ Contoh (Setiap 1 hari):
         if (!validatedInterval) return bot.sock.sendMessage(from, { text: `❌ Interval salah. Gunakan format: 10m, 2h, atau 1d.` });
 
         // Parse Until
-        repeatUntil = parseWIB(untilStr); 
+        repeatUntil = parseWIB(untilStr);
 
         if (!repeatUntil) return bot.sock.sendMessage(from, { text: "❌ Format waktu 'Sampai' salah." });
         if (repeatUntil <= waktuMulai) return bot.sock.sendMessage(from, { text: "❌ Waktu 'Sampai' harus setelah waktu 'Mulai'." });
 
         repeatInterval = validatedInterval;
-        repeatText = `Tiap ${repeatInterval} s/d ${repeatUntil.toLocaleString("id-ID", { day: 'numeric', month: 'short', hour:'2-digit', minute:'2-digit' })}`;
+        repeatText = `Tiap ${repeatInterval} s/d ${repeatUntil.toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
       }
 
       // 7. Simpan ke Database
@@ -124,13 +125,13 @@ Contoh (Setiap 1 hari):
       });
 
       // 8. Respon Sukses Estetik
-      const displayTime = waktuMulai.toLocaleString("id-ID", { 
-          weekday: 'long', 
-          day: 'numeric', 
-          month: 'long', 
-          hour: '2-digit', 
-          minute: '2-digit',
-          timeZone: "Asia/Jakarta"
+      const displayTime = waktuMulai.toLocaleString("id-ID", {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: "Asia/Jakarta"
       });
 
       // --- LOGIKA DISPLAY TAGGING DI REPLY ---
@@ -138,11 +139,11 @@ Contoh (Setiap 1 hari):
       let mentionsToReply = [sender]; // Sender wajib ditag di konfirmasi
 
       if (targetMembers) {
-          const targets = targetMembers.split(",");
-          // Gabungkan ke array mentions agar nama mereka biru di chat
-          mentionsToReply = mentionsToReply.concat(targets);
-          // Buat string display: @628xxx, @628xxx
-          tagInfo = targets.map(id => `@${id.split('@')[0]}`).join(", ");
+        const targets = targetMembers.split(",");
+        // Gabungkan ke array mentions agar nama mereka biru di chat
+        mentionsToReply = mentionsToReply.concat(targets);
+        // Buat string display: @628xxx, @628xxx
+        tagInfo = targets.map(id => `@${id.split('@')[0]}`).join(", ");
       }
 
       let reply = `🔔 *PENGINGAT DIJADWALKAN*\n`;
@@ -152,11 +153,11 @@ Contoh (Setiap 1 hari):
       reply += `👥 Target: ${tagInfo}\n`;
       reply += `🔁 Status: ${repeatText}\n`;
       reply += `────────────────────\n`;
-      
+
       if (targetMembers) {
-          reply += `💡 _Bot hanya akan men-tag orang yang dimention di atas._`;
+        reply += `💡 _Bot hanya akan men-tag orang yang dimention di atas._`;
       } else {
-          reply += `💡 _Bot akan men-tag semua member saat waktunya tiba._`;
+        reply += `💡 _Bot akan men-tag semua member saat waktunya tiba._`;
       }
 
       await bot.sock.sendMessage(from, {

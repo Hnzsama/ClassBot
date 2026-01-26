@@ -1,15 +1,15 @@
 // src/commands/member/edit.js
 module.exports = {
-  name: "#edit-member",
-  description: "Edit member. Format: #edit-member [3 digit NIM] [field] [value]",
+  name: "#member-edit",
+  description: "Edit member. Format: #member-edit [NIM] [Field] [Value]",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
-    
+
     // 1. Validasi Input
     if (args.length < 3) {
-        return bot.sock.sendMessage(from, { 
-            text: "⚠️ *Format Salah (Gunakan Spasi)*\n\nContoh:\n`#edit-member 001 nama Budi Santoso`\n`#edit-member 001 panggilan Budi`" 
-        });
+      return bot.sock.sendMessage(from, {
+        text: "⚠️ *Format Salah (Gunakan Spasi)*\n\nContoh:\n`#edit-member 001 nama Budi Santoso`\n`#edit-member 001 panggilan Budi`"
+      });
     }
 
     const nimSuffix = args[0];
@@ -17,7 +17,7 @@ module.exports = {
     const newValue = args.slice(2).join(" ");
 
     if (!["nama", "panggilan"].includes(field)) {
-        return bot.sock.sendMessage(from, { text: "❌ Field salah. Hanya bisa edit 'nama' atau 'panggilan'." });
+      return bot.sock.sendMessage(from, { text: "❌ Field salah. Hanya bisa edit 'nama' atau 'panggilan'." });
     }
 
     try {
@@ -36,12 +36,12 @@ module.exports = {
       });
 
       if (candidates.length === 0) return bot.sock.sendMessage(from, { text: `❌ Member dengan akhiran NIM *...${nimSuffix}* tidak ditemukan.` });
-      
+
       // Cek Ambiguitas (Jika ada 2 orang dengan akhiran NIM sama, misal 1001 dan 2001)
       if (candidates.length > 1) {
-          return bot.sock.sendMessage(from, { 
-              text: `⚠️ NIM Ambigu. Ditemukan ${candidates.length} orang:\n${candidates.map(c => `- ${c.nama} (${c.nim})`).join('\n')}\n\nMohon ketik NIM lebih lengkap.` 
-          });
+        return bot.sock.sendMessage(from, {
+          text: `⚠️ NIM Ambigu. Ditemukan ${candidates.length} orang:\n${candidates.map(c => `- ${c.nama} (${c.nim})`).join('\n')}\n\nMohon ketik NIM lebih lengkap.`
+        });
       }
 
       const target = candidates[0];
@@ -58,11 +58,11 @@ module.exports = {
       reply += `──────────────────────\n`;
       reply += `👤 Member: *${target.nama}*\n`;
       reply += `🆔 NIM: \`${target.nim}\`\n\n`;
-      
+
       reply += `🔄 *Perubahan (${field.toUpperCase()}):*\n`;
       reply += `🔻 Semula: ~${oldValue}~\n`;
       reply += `✅ Menjadi: *${newValue}*\n`;
-      
+
       reply += `──────────────────────\n`;
       reply += `✍️ Oleh: @${sender.split("@")[0]}`;
 

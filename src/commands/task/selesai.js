@@ -3,8 +3,8 @@ const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 const { validateTaskEvidence } = require("../../utils/aiValidator"); // Sesuaikan path
 
 module.exports = {
-  name: "#selesai",
-  description: "Setor tugas dengan bukti gambar. Format: Reply Gambar + #selesai [Mapel] [Judul]",
+  name: "#task-done",
+  description: "Submit task with proof. Format: #task-done [Title]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
@@ -55,52 +55,52 @@ module.exports = {
       const result = await validateTaskEvidence(bot.model, buffer, userCaption, pendingTasks);
 
       // --- ANALISIS HASIL AI ---
-      
+
       // Kasus A: Tugas tidak ditemukan / Ambigu
       if (!result.taskId) {
         await bot.sock.sendMessage(from, { react: { text: "❓", key: msg.key } });
-        return bot.sock.sendMessage(from, { 
-            text: `⚠️ **Tugas Tidak Teridentifikasi**\n\nAnalisis AI: _"${result.reason}"_\n\nMohon tulis nama Mapel dan Judul lebih spesifik.`,
-            mentions: [sender]
+        return bot.sock.sendMessage(from, {
+          text: `⚠️ **Tugas Tidak Teridentifikasi**\n\nAnalisis AI: _"${result.reason}"_\n\nMohon tulis nama Mapel dan Judul lebih spesifik.`,
+          mentions: [sender]
         }, { quoted: msg });
       }
 
       // Kasus B: Tugas ketemu, tapi Gambar Tidak Valid
       if (!result.isValid) {
         await bot.sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
-        return bot.sock.sendMessage(from, { 
-            text: `❌ **Bukti Ditolak**\n\nAnalisis AI: _"${result.reason}"_\n\nKirim ulang dengan bukti yang benar.`,
-            mentions: [sender]
+        return bot.sock.sendMessage(from, {
+          text: `❌ **Bukti Ditolak**\n\nAnalisis AI: _"${result.reason}"_\n\nKirim ulang dengan bukti yang benar.`,
+          mentions: [sender]
         }, { quoted: msg });
       }
 
       // Kasus C: Valid! Simpan ke Database.
       const targetTask = pendingTasks.find(t => t.id === result.taskId);
-      
+
       // Cek apakah user sudah pernah submit
       const currentFinished = targetTask.finishedMemberIds ? targetTask.finishedMemberIds.split(",") : [];
-      
+
       // Ambil nomor sender saja (tanpa @s.whatsapp.net) agar hemat karakter DB
-      const senderNum = sender.split("@")[0]; 
+      const senderNum = sender.split("@")[0];
 
       if (currentFinished.includes(senderNum)) {
-         await bot.sock.sendMessage(from, { react: { text: "👌", key: msg.key } });
-         return bot.sock.sendMessage(from, { text: `⚠️ Kamu sudah tercatat menyelesaikan tugas *${targetTask.judul}*.` }, { quoted: msg });
+        await bot.sock.sendMessage(from, { react: { text: "👌", key: msg.key } });
+        return bot.sock.sendMessage(from, { text: `⚠️ Kamu sudah tercatat menyelesaikan tugas *${targetTask.judul}*.` }, { quoted: msg });
       }
 
       // Tambahkan user ke list
       currentFinished.push(senderNum);
-      
+
       await bot.db.prisma.task.update({
-          where: { id: targetTask.id },
-          data: { finishedMemberIds: currentFinished.join(",") }
+        where: { id: targetTask.id },
+        data: { finishedMemberIds: currentFinished.join(",") }
       });
 
       // --- SUKSES ---
       await bot.sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
       await bot.sock.sendMessage(from, {
-          text: `✅ *LAPORAN DITERIMA*\n\n📚 Mapel: ${targetTask.mapel}\n📝 Judul: ${targetTask.judul}\n🤖 Status: *Valid*\n\n_"${result.reason}"_`,
-          mentions: [sender]
+        text: `✅ *LAPORAN DITERIMA*\n\n📚 Mapel: ${targetTask.mapel}\n📝 Judul: ${targetTask.judul}\n🤖 Status: *Valid*\n\n_"${result.reason}"_`,
+        mentions: [sender]
       }, { quoted: msg });
 
     } catch (e) {

@@ -3,14 +3,14 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { addSubjectsToDb } = require("./add");
 
 module.exports = {
-  name: "#add-mapel-ai",
+  name: "#mapel-ai",
   description: "Tambah mapel via AI (Teks/Foto).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model, db } = bot;
 
     if (!from.endsWith("@g.us")) return;
     
-    const rawInput = text.replace("#add-mapel-ai", "").trim();
+    const rawInput = text.replace("#mapel-ai", "").trim();
     
     // --- 1. DETEKSI GAMBAR (VISION) ---
     const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
@@ -44,7 +44,7 @@ module.exports = {
     // Validasi Input
     if (!rawInput && !hasImage) {
       return bot.sock.sendMessage(from, { 
-          text: "⚠️ *AI MAPEL SCANNER*\n\nFitur ini bisa membaca *Foto Jadwal/KRS* atau *List Teks*.\n\n📸 *Cara Pakai (Foto):*\n1. Kirim/Reply foto jadwal.\n2. Ketik `#add-mapel-ai`\n\n📝 *Cara Pakai (Teks):*\nKetik `#add-mapel-ai mapel semester 1 IT`" 
+            text: "⚠️ *AI MAPEL SCANNER*\n\nFitur ini bisa membaca *Foto Jadwal/KRS* atau *List Teks*.\n\n📈 *Cara Pakai (Foto):*\n1. Kirim/Reply foto jadwal.\n2. Ketik `#mapel+ai`\n\n📄 *Cara Pakai (Teks):*\nKetik `#mapel+ai mapel semester 1 IT`"
       });
     }
 

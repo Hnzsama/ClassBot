@@ -1,9 +1,10 @@
 module.exports = {
-  name: "#pantun",
-  description: "Buat pantun lucu/nasihat via AI. Format: #pantun [Topik]",
+  name: "#rhyme",
+  alias: ["#pantun"],
+  description: "Generate funny rhymes. Format: #rhyme [Topic]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
-    
+
     // Ambil topik dari input
     const topic = text.replace("#pantun", "").trim() || "Random/Bebas";
 
@@ -26,8 +27,8 @@ module.exports = {
       const result = await model.generateContent(prompt);
       const response = result.response.text().trim();
 
-      await sock.sendMessage(from, { 
-          text: `🎋 *PANTUN HARI INI*\nTopik: ${topic}\n\n${response}` 
+      await sock.sendMessage(from, {
+        text: `🎋 *PANTUN HARI INI*\nTopik: ${topic}\n\n${response}`
       });
 
     } catch (e) {

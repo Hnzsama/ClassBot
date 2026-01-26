@@ -4,8 +4,9 @@ const { spawnSync } = require("child_process");
 const path = require("path");
 
 module.exports = {
-  name: "#stiker",
-  description: "Membuat stiker (Transparan + Text Support).",
+  name: "#sticker",
+  alias: ["#stik"],
+  description: "Make sticker (Support Transparent + Text).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock } = bot;
 

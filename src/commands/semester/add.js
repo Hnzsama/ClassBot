@@ -1,16 +1,17 @@
 // commands/semester/add.js
 module.exports = {
-  name: "#add-semester",
-  description: "Menambah semester. Format: #add-semester [Nama 1], [Nama 2]",
+  name: "#semester-add",
+  alias: ["#semester"],
+  description: "Add semesters. Format: #semester-add [Name 1], [Name 2]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
     // 1. Parsing Input
-    const rawContent = text.replace("#add-semester", "").trim();
-    
+    const rawContent = text.replace("#semester", "").trim();
+
     if (rawContent.length === 0) {
-      return await bot.sock.sendMessage(from, { 
-          text: "⚠️ *Format Tambah Semester*\n\nGunakan koma ( , ) untuk menambah banyak sekaligus.\n\nContoh:\n`#add-semester Semester 1, Semester 2`\n\nAtau:\n`#add-semester Ganjil 2024, Genap 2025`" 
+      return await bot.sock.sendMessage(from, {
+        text: "⚠️ *Format Tambah Semester*\n\nGunakan koma ( , ) untuk menambah banyak sekaligus.\n\nContoh:\n`#semester Semester 1, Semester 2`\n\nAtau:\n`#semester Ganjil 2024, Genap 2025`"
       });
     }
 
@@ -19,21 +20,21 @@ module.exports = {
     const rawNames = rawContent.split(/[,\n]+/).map(name => name.trim()).filter(name => name.length > 0);
 
     if (rawNames.length === 0) {
-        return await bot.sock.sendMessage(from, { text: "⚠️ Tidak ada nama semester yang terbaca." });
+      return await bot.sock.sendMessage(from, { text: "⚠️ Tidak ada nama semester yang terbaca." });
     }
 
     try {
       // 2. Cek Validasi Kelas (Dual Group Check)
-      const kelas = await bot.db.prisma.class.findFirst({ 
-          where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] } 
+      const kelas = await bot.db.prisma.class.findFirst({
+        where: { OR: [{ mainGroupId: from }, { inputGroupId: from }] }
       });
-      
-      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Gunakan `#add-class` dulu." });
+
+      if (!kelas) return bot.sock.sendMessage(from, { text: "❌ Kelas belum terdaftar. Gunakan `#class` dulu." });
 
       // 3. Cek Duplikat (Ambil data lama untuk dibandingkan)
       const existingSems = await bot.db.prisma.semester.findMany({
-          where: { classId: kelas.id },
-          select: { name: true }
+        where: { classId: kelas.id },
+        select: { name: true }
       });
       // Simpan nama lama dalam lowercase set agar pencarian cepat
       const existingNames = new Set(existingSems.map(s => s.name.toLowerCase()));
@@ -44,23 +45,23 @@ module.exports = {
       const addedNames = []; // Untuk laporan sukses
 
       rawNames.forEach(name => {
-          if (existingNames.has(name.toLowerCase())) {
-              errors.push(`- ${name} (Sudah ada)`);
-          } else {
-              payload.push({
-                  name: name,
-                  classId: kelas.id,
-                  isActive: false, // Default tidak aktif
-              });
-              addedNames.push(name);
-              existingNames.add(name.toLowerCase()); // Masukkan ke set lokal biar gak duplikat sesama input
-          }
+        if (existingNames.has(name.toLowerCase())) {
+          errors.push(`- ${name} (Sudah ada)`);
+        } else {
+          payload.push({
+            name: name,
+            classId: kelas.id,
+            isActive: false, // Default tidak aktif
+          });
+          addedNames.push(name);
+          existingNames.add(name.toLowerCase()); // Masukkan ke set lokal biar gak duplikat sesama input
+        }
       });
 
       if (payload.length === 0) {
-          return await bot.sock.sendMessage(from, { 
-              text: `❌ Semua semester gagal ditambahkan (Duplikat).\n\n${errors.join('\n')}` 
-          });
+        return await bot.sock.sendMessage(from, {
+          text: `❌ Semua semester gagal ditambahkan (Duplikat).\n\n${errors.join('\n')}`
+        });
       }
 
       // 5. Eksekusi Simpan
@@ -74,9 +75,9 @@ module.exports = {
       successMsg += `➕ ${addedNames.join(', ')}\n`;
 
       if (errors.length > 0) {
-          successMsg += `\n⚠️ *Dilewati (${errors.length}):*\n${errors.join('\n')}`;
+        successMsg += `\n⚠️ *Dilewati (${errors.length}):*\n${errors.join('\n')}`;
       }
-      
+
       successMsg += `\n💡 _Gunakan #set-semester [ID] untuk mengaktifkan semester._`;
 
       await bot.sock.sendMessage(from, {

@@ -1,17 +1,18 @@
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
-  name: "#transkrip",
-  description: "Ubah Voice Note (VN) jadi teks. Reply VN dengan #transkrip",
+  name: "#transcript",
+  alias: ["#transkip"],
+  description: "Transcribe Voice Note to Text. Reply VN.",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
 
     // 1. Validasi: Apakah ada pesan yang direply?
     const quotedMessage = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-    
+
     if (!quotedMessage || !quotedMessage.audioMessage) {
-      return await sock.sendMessage(from, { 
-        text: "⚠️ Reply sebuah Voice Note (VN) atau Audio dengan perintah `#transkrip`." 
+      return await sock.sendMessage(from, {
+        text: "⚠️ Reply sebuah Voice Note (VN) atau Audio dengan perintah `#transkrip`."
       });
     }
 
@@ -26,9 +27,9 @@ module.exports = {
       // Kita buat objek pesan palsu agar fungsi downloadMediaMessage bisa membacanya
       const fakeMsg = {
         key: {
-            remoteJid: from,
-            id: msg.message.extendedTextMessage.contextInfo.stanzaId,
-            participant: msg.message.extendedTextMessage.contextInfo.participant
+          remoteJid: from,
+          id: msg.message.extendedTextMessage.contextInfo.stanzaId,
+          participant: msg.message.extendedTextMessage.contextInfo.participant
         },
         message: quotedMessage
       };
@@ -36,10 +37,10 @@ module.exports = {
       const buffer = await downloadMediaMessage(
         fakeMsg,
         'buffer',
-        { },
-        { 
-            logger: console, 
-            reuploadRequest: sock.updateMediaMessage 
+        {},
+        {
+          logger: console,
+          reuploadRequest: sock.updateMediaMessage
         }
       );
 
