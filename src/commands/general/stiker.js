@@ -2,6 +2,7 @@ const { downloadContentFromMessage } = require("@whiskeysockets/baileys");
 const fs = require("fs");
 const { spawnSync } = require("child_process");
 const path = require("path");
+const ffmpegPath = require("ffmpeg-static");
 
 module.exports = {
   name: "#sticker",
@@ -17,9 +18,17 @@ module.exports = {
     if (quoted) {
       if (quoted.imageMessage) { mediaMessage = quoted.imageMessage; mediaType = "image"; }
       else if (quoted.videoMessage) { mediaMessage = quoted.videoMessage; mediaType = "video"; }
+      else if (quoted.documentMessage && quoted.documentMessage.mimetype?.startsWith("image/")) {
+        mediaMessage = quoted.documentMessage;
+        mediaType = "document";
+      }
     } else {
       if (msg.message?.imageMessage) { mediaMessage = msg.message.imageMessage; mediaType = "image"; }
       else if (msg.message?.videoMessage) { mediaMessage = msg.message.videoMessage; mediaType = "video"; }
+      else if (msg.message?.documentMessage && msg.message.documentMessage.mimetype?.startsWith("image/")) {
+        mediaMessage = msg.message.documentMessage;
+        mediaType = "document";
+      }
     }
 
     if (!mediaMessage) return await sock.sendMessage(from, { text: "❗ Kirim/Reply media dengan caption *#stiker*." });
@@ -28,7 +37,11 @@ module.exports = {
     await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
 
     const timestamp = Date.now();
-    const inputExt = mediaType === "video" ? "mp4" : "jpeg";
+    let inputExt = mediaType === "video" ? "mp4" : "jpeg";
+    if (mediaMessage.mimetype) {
+      const mimeMap = { "image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp", "image/gif": "gif" };
+      inputExt = mimeMap[mediaMessage.mimetype] || mediaMessage.mimetype.split('/')[1] || inputExt;
+    }
     const inputFile = path.join(process.cwd(), `temp_${timestamp}.${inputExt}`);
     const outputFile = path.join(process.cwd(), `temp_${timestamp}.webp`);
 
@@ -77,7 +90,7 @@ module.exports = {
         outputFile
       ];
 
-      const result = spawnSync("ffmpeg", ffmpegArgs);
+      const result = spawnSync(ffmpegPath, ffmpegArgs);
 
       if (result.error) throw result.error;
       if (!fs.existsSync(outputFile) || fs.statSync(outputFile).size === 0) {
