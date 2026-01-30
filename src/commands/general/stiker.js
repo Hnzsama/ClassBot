@@ -6,7 +6,7 @@ const ffmpegPath = require("ffmpeg-static");
 
 module.exports = {
   name: "#sticker",
-  alias: ["#stik"],
+  alias: ["#stik", "#stiker"],
   description: "Make sticker (Support Transparent + Text).",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock } = bot;
