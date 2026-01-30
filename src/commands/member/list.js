@@ -1,12 +1,9 @@
 // src/commands/member/list.js
 module.exports = {
   name: "#member-list",
-  description: "Show member list. Filter: #member-list [NIM]",
+  description: "Show member list. Filter: #member-list [Keywords...]",
   execute: async (bot, from, sender, args, msg) => {
     if (!from.endsWith("@g.us")) return;
-
-    // Cek apakah ada argumen angka untuk filter (misal: 051)
-    const nimFilter = args.find(arg => /^\d+$/.test(arg));
 
     try {
       // 1. Cek Kelas (Dual Group Check)
@@ -18,20 +15,41 @@ module.exports = {
 
       // 2. Query Database
       const queryOptions = {
-        where: { classId: kelas.id },
-        orderBy: { nim: "asc" }, // Urutkan berdasarkan NIM
+        where: { classId: kelas.id }, // Default: Only class members
+        orderBy: { nim: "asc" },
       };
 
-      // Terapkan filter jika user mengetik angka
-      if (nimFilter) {
-        queryOptions.where.nim = { endsWith: nimFilter };
+      // Terapkan Multi-Search
+      if (args.length > 0) {
+        // Construct OR conditions for each keyword
+        // We want: (Field contains Keyword1) OR (Field contains Keyword2) ...
+        // AND ensuring it's in the correct class.
+
+        // Strategy: 
+        // We want to find members where ANY of the keywords match ANY of the fields.
+        // So we flatly map all keywords to all fields.
+        // e.g. "Agus 001" -> (Name contains Agus OR Nim contains Agus) OR (Name contains 001 OR Nim contains 001)
+
+        const orConditions = [];
+
+        args.forEach(arg => {
+          orConditions.push({ nim: { contains: arg } });
+          orConditions.push({ nama: { contains: arg } });
+          orConditions.push({ panggilan: { contains: arg } });
+        });
+
+        // Add to main where clause
+        // Prisma: { classId: ..., AND: [ { OR: [...] } ] }
+        queryOptions.where.AND = [
+          { OR: orConditions }
+        ];
       }
 
       const members = await bot.db.prisma.member.findMany(queryOptions);
 
       if (members.length === 0) {
-        if (nimFilter) {
-          return bot.sock.sendMessage(from, { text: `🔍 Tidak ditemukan member dengan akhiran NIM *...${nimFilter}*` });
+        if (args.length > 0) {
+          return bot.sock.sendMessage(from, { text: `🔍 Tidak ditemukan member dengan kata kunci: *${args.join(", ")}*` });
         }
         return bot.sock.sendMessage(from, { text: "📂 Belum ada data member.\nGunakan `#member` untuk menambah." });
       }
@@ -40,8 +58,8 @@ module.exports = {
       let text = `📜 *DAFTAR MAHASISWA*\n`;
       text += `🏫 Kelas: *${kelas.name}*\n`;
 
-      if (nimFilter) {
-        text += `🔍 Filter NIM: *...${nimFilter}*\n`;
+      if (args.length > 0) {
+        text += `🔍 Filter: *${args.join(", ")}*\n`;
         text += `📊 Hasil: ${members.length} ditemukan\n`;
       } else {
         text += `👥 Total: ${members.length} Mahasiswa\n`;
@@ -66,8 +84,8 @@ module.exports = {
       text += `\n──────────────────────\n`;
 
       // Footer Tips
-      if (!nimFilter) {
-        text += `💡 _Tips: Ketik #list-member [3 digit] untuk mencari NIM tertentu._`;
+      if (args.length === 0) {
+        text += `💡 _Tips: Ketik #member-list [Nama/NIM] untuk mencari multiple members._`;
       }
 
       await bot.sock.sendMessage(from, { text });

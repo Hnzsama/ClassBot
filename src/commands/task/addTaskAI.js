@@ -1,6 +1,6 @@
 // src/commands/tugas/addTaskAI.js
 
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const AIHandler = require('../../utils/aiHandler');
 const fs = require('fs');
 const path = require('path');
 
@@ -22,6 +22,8 @@ module.exports = {
     const { sock, model, db } = bot;
     const userNumber = sender.split("@")[0];
 
+    const ai = new AIHandler(bot);
+
     if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI tidak aktif." });
     if (!from.endsWith("@g.us")) return;
 
@@ -32,51 +34,35 @@ module.exports = {
     inputData = inputData.replace("--lampiran", "").replace("--attach", "").trim();
 
     let attachmentData = null;
-    let mimeType = "text/plain";
-    let mediaBuffer = null;
 
-    const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    // 1. Deteksi Media via AIHandler
+    const media = await ai.downloadMedia(msg, from);
 
-    // 1. Deteksi Media
-    if (quotedMsg) {
-      const mediaKeys = ['imageMessage', 'videoMessage', 'documentMessage'];
-      const mediaType = mediaKeys.find(key => quotedMsg[key]);
+    if (media && isAttachmentMode) {
+      try {
+        const mediaMessage = media.mediaMessage;
+        const extension = media.mimeType.split('/')[1] || 'bin';
+        // fileSha256 is Buffer in Baileys
+        const sha = mediaMessage.fileSha256 ? mediaMessage.fileSha256.toString('hex').substring(0, 8) : Date.now();
+        const fName = `${Date.now()}_ai_${sha}.${extension}`;
+        const localFilePath = path.join(MEDIA_DIR, fName);
 
-      if (mediaType) {
-        const mediaMessage = quotedMsg[mediaType];
+        fs.writeFileSync(localFilePath, media.buffer);
 
-        try {
-          const stream = await downloadMediaMessage(
-            { key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg },
-            'buffer',
-            {},
-            { reuploadRequest: sock.updateMediaMessage }
-          );
-
-          if (isAttachmentMode) {
-            const extension = mediaMessage.mimetype.split('/')[1] || 'bin';
-            const fName = `${Date.now()}_ai_${mediaMessage.fileSha256?.toString('hex').substring(0, 8)}.${extension}`;
-            const localFilePath = path.join(MEDIA_DIR, fName);
-            fs.writeFileSync(localFilePath, stream);
-
-            attachmentData = JSON.stringify({
-              type: mediaType,
-              mimetype: mediaMessage.mimetype,
-              localFilePath: localFilePath,
-              mediaKey: mediaMessage.mediaKey?.toString('base64'),
-              fileSha256: mediaMessage.fileSha256?.toString('base64'),
-            });
-          } else {
-            mediaBuffer = stream;
-            mimeType = mediaMessage.mimetype;
-          }
-        } catch (e) {
-          return sock.sendMessage(from, { text: "❌ Gagal download media." });
-        }
+        attachmentData = JSON.stringify({
+          type: media.type + 'Message', // e.g. imageMessage
+          mimetype: media.mimeType,
+          localFilePath: localFilePath,
+          mediaKey: mediaMessage.mediaKey?.toString('base64'),
+          fileSha256: mediaMessage.fileSha256?.toString('base64'),
+        });
+      } catch (e) {
+        console.error("Attachment Error:", e);
+        return sock.sendMessage(from, { text: "❌ Gagal menyimpan lampiran." });
       }
     }
 
-    if (inputData.length < 5 && !mediaBuffer) {
+    if (inputData.length < 5 && !media) {
       return sock.sendMessage(from, {
         text: "⚠️ *AI TASK SCANNNER*\n\nKirim deskripsi atau reply gambar soal.\n\n📝 *Contoh:* \"Tugas Matematika bab 3 deadline besok\"\n📎 *Lampiran:* Tambahkan `--lampiran` jika ingin menyimpan file yang di-reply."
       });
@@ -110,30 +96,13 @@ module.exports = {
       { "mapel": "Nama Mapel", "judul": "Judul Tugas", "deadline": "YYYY-MM-DD HH:mm", "isGroupTask": true/false, "link": "URL/-" }
       `;
 
-      const contentParts = [{ text: systemPrompt }];
+      const result = await ai.generateJSON(systemPrompt, inputData, media);
 
-      if (mediaBuffer) {
-        contentParts.push({ text: `Ekstrak dari gambar ini.` });
-        contentParts.push({ inlineData: { mimeType: mimeType, data: mediaBuffer.toString('base64') } });
-        if (inputData) contentParts.push({ text: `Catatan: ${inputData}` });
-      } else {
-        contentParts.push({ text: `Input: ${inputData}` });
-      }
-
-      const contents = [{ role: "user", parts: contentParts }];
-      const result = await model.generateContent({ contents });
-
-      let jsonText = result.response.text().trim();
-      // Bersihkan markdown code block jika ada
-      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) jsonText = jsonMatch[0];
-
-      let taskData;
-      try {
-        taskData = JSON.parse(jsonText);
-      } catch (e) {
+      if (!result.success) {
         return sock.sendMessage(from, { text: "❌ AI bingung membaca respon." });
       }
+
+      const taskData = result.data;
 
       // 4. Validasi & Simpan
       let { mapel, judul, deadline, isGroupTask, link } = taskData;

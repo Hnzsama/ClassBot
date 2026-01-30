@@ -10,8 +10,12 @@
  */
 
 const conversationHistory = {}; // Store conversation per user
-const ALLOWED_NUMBER = "6285159884234@s.whatsapp.net";
-const TARGET_GROUP = "120363421309923905@g.us";
+// Allow both Phone JID and LID (Lightning Identity)
+const ALLOWED_NUMBERS = [
+  "6285159884234@s.whatsapp.net",
+  "276252363632838@lid"
+];
+const TARGET_GROUP = "120363422988269003@g.us";
 const EXPECTED_SCHEDULE_TIME = "10:00"; // 10 AM tomorrow
 
 // Export main handler
@@ -23,10 +27,14 @@ module.exports = async (bot, message) => {
   // Check if this is a private message (not group)
   if (sender.endsWith("@g.us")) return;
 
-  // Only process from specific number
-  if (sender !== ALLOWED_NUMBER) {
+  // Debug log
+  console.log(`[HANDLERS] Private Message from: ${sender}`);
+
+  // Only process from specific numbers
+  if (!ALLOWED_NUMBERS.includes(sender)) {
+    console.warn(`[HANDLERS] Rejected. Got: ${sender}`);
     return await sock.sendMessage(sender, {
-      text: "⛔ Percakapan ini hanya untuk nomor terdaftar (PJ Matkul).",
+      text: "⛔ Akses ditolak. Nomor Anda tidak terdaftar.",
     });
   }
 
@@ -60,79 +68,120 @@ module.exports = async (bot, message) => {
     await sock.sendPresenceUpdate("composing", sender);
 
     // Build system prompt
+    // Build system prompt
     const systemPrompt = `PERAN: Kamu adalah Mahasiswa/PJ Mata Kuliah (Bot) yang sopan dan formal.
 LAWAN BICARA: Dosen Pengampu Mata Kuliah (Nomor ini).
 
 KONTEKS:
 - Kamu sedang menghubungi Dosen untuk memastikan jadwal kuliah BESOK JAM ${EXPECTED_SCHEDULE_TIME}.
-- Kamu mewakili teman-teman sekelas.
 
-TUJUAN:
-1. Dapatkan kepastian apakah Dosen bisa mengajar besok jam ${EXPECTED_SCHEDULE_TIME}?
-2. Jika bisa, tanyakan di ruangan mana atau online?
-3. Jika tidak bisa, tanyakan apakah ada tugas pengganti atau jadwal ganti?
-4. Jika sudah ada kepastian (Jadwal Fix / Batal / Tugas), akhiri percakapan dengan sopan dan ucapkan terima kasih.
+TUJUAN UTAMA:
+Dapatkan informasi lengkap: JADWAL (Jadi/Tidak) + METODE (Online/Offline) + LOKASI (Ruangan/Link).
 
-GAYA BAHASA:
-- Bahasa Indonesia baku, sangat sopan, dan hormat (khas mahasiswa ke dosen).
-- Gunakan sapaan "Baik Pak/Bu", "Mohon maaf Pak/Bu", "Terima kasih Pak/Bu".
-- Jangan kaku seperti robot, tapi tetap formal.
+ALUR PERCAKAPAN (PENTING):
+1. TAHAP 1 (Awal): Tanyakan apakah besok kuliah? (Sudah dilakukan di chat pertama).
+2. TAHAP 2 (Konfirmasi Metode):
+   - Jika Dosen menjawab "Offline" atau "Di Kampus" -> Tanyakan: "Baik Pak/Bu, untuk ruangannya di kelas berapa nggih?"
+   - Jika Dosen menjawab "Online" atau "Daring" -> Tanyakan: "Baik Pak/Bu, apakah ada link Zoom/Meet yang bisa kami bagikan ke teman-teman?"
+   - Jika Dosen menjawab "Batal" atau "Tidak bisa" -> Tanyakan: "Baik Pak/Bu, apakah ada tugas pengganti atau jadwal pengganti?"
+3. TAHAP 3 (Finalisasi):
+   - Jika semua info sudah lengkap (Jadwal + Ruangan/Link), ucapkan terima kasih dan tutup percakapan.
+   - Set 'is_confirmed' = true HANYA jika info sudah lengkap ini.
 
-INSTRUKSI KHUSUS:
-- Jika Dosen sudah memberikan kepastian akhir (misal: "Oke besok masuk", atau "Besok libur"), balas dengan ucapan terima kasih dan konfirmasi menutup percakapan.
-- Contoh closing: "Baik Pak/Bu, terima kasih banyak atas informasinya. Saya akan sampaikan ke teman-teman sekelas. Selamat malam."
-- Jika closing terdeteksi, tambahkan marker khusus di akhir response AI: "[[CONFIRMED]]" agar sistem bisa mengirim laporan ke grup kelas.`;
+INSTRUKSI JSON OUTPUT:
+Lupakan format teks biasa. Kamu HARUS merespons dalam format JSON saja.
+Struktur JSON:
+{
+  "response_to_dosen": "String jawaban santun kamu ke dosen",
+  "is_ambiguous": boolean, // True jika dosen menjawab "nanti dulu", "besok dikabari", "belum tahu"
+  "is_confirmed": boolean, // True jika SEMUA info sudah didapat (Jadwal + Ruangan/Link) dan percakapan selesai.
+  "follow_up_minutes": number | null, // Simpan jika ambigu.
+  "reason": "Ringkasan info yang didapat sejauh ini"
+}
 
-    // Call Gemini API with conversation history
-    const response = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: systemPrompt }],
-        },
-        ...conversationHistory[sender],
-      ],
-    });
+CONTOH:
+User: "Besok kita masuk offline saja mas."
+AI Output:
+{
+  "response_to_dosen": "Baik Pak, terima kasih informasinya. Mohon izin bertanya, untuk ruangannya di kelas berapa nggih Pak?",
+  "is_ambiguous": false,
+  "is_confirmed": false,
+  "reason": "Jadwal offline, belum tau ruangan"
+}
 
-    const aiResponse =
-      response.response.candidates[0]?.content?.parts[0]?.text ||
-      "Maaf, saya tidak dapat merespons saat ini.";
+User: "Di ruang 304 ya."
+AI Output:
+{
+  "response_to_dosen": "Baik Pak, di Ruang 304 besok jam 10.00. Terima kasih banyak informasinya Pak. Selamat beristirahat.",
+  "is_ambiguous": false,
+  "is_confirmed": true,
+  "reason": "Jadwal offline di R.304"
+}`;
 
-    // Remove marker from text sent to user
-    const textToSend = aiResponse.replace("[[CONFIRMED]]", "").trim();
+    // CONSTRUCT CONTENT PARTS FOR AI HANDLER
+    const contentParts = [
+      {
+        role: "user",
+        parts: [{ text: systemPrompt }],
+      },
+      ...conversationHistory[sender],
+    ];
 
-    // Add AI response to history
-    conversationHistory[sender].push({
-      role: "model",
-      parts: [{ text: aiResponse }], // Keep marker in history for context if needed, or clean it. Better keep clean. 
-    });
-    // Actually, good to keep raw history, but we just push textToSend to be safe/natural.
-    // Let's refix the history push.
+    // Import Utility
+    const { generateAIContent } = require('../utils/aiHandler');
 
-    // Send response to user (Dosen)
-    await sock.sendMessage(sender, {
-      text: textToSend,
-    });
+    // Call AI with Retry Mechanism
+    // Note: generateAIContent handles JSON parsing internally if detected
+    const aiOutput = await generateAIContent(model, { contents: contentParts });
 
-    // Check if conversation is confirmed
-    if (aiResponse.includes("[[CONFIRMED]]")) {
+    let aiData;
+
+    if (typeof aiOutput === 'string') {
+      // Fallback if string returned (e.g. Rate Limit message or plain text)
+      aiData = { response_to_dosen: aiOutput, is_ambiguous: false, is_confirmed: false };
+    } else {
+      // It's the parsed JSON object
+      aiData = aiOutput;
+    }
+
+    // 1. Kirim Balasan ke Dosen
+    if (aiData.response_to_dosen) {
+      await sock.sendMessage(sender, { text: aiData.response_to_dosen });
+
+      // Simpan ke history
+      conversationHistory[sender].push({
+        role: "model",
+        parts: [{ text: aiData.response_to_dosen }]
+      });
+    }
+
+    // 2. Handle Ambiguous (Nanti Dulu)
+    if (aiData.is_ambiguous && aiData.follow_up_minutes) {
+      const taskQueue = require('../utils/taskQueue');
+      const followUpTime = new Date(Date.now() + aiData.follow_up_minutes * 60000);
+
+      taskQueue.addTask({
+        targetNumber: sender,
+        scheduledTime: followUpTime.toISOString(),
+        context: `Follow up soal jadwal besok. Dosen sebelumnya bilang: "${aiData.reason}".`
+      });
+
+      console.log(`[PJ-MATKUL] Jadwal Follow-Up dibuat: ${followUpTime.toLocaleTimeString()}`);
+    }
+
+    // 3. Handle Confirmed
+    if (aiData.is_confirmed) {
       // 1. Generate Summary for Group
-      const summary = await generateSummary(
-        model,
-        conversationHistory[sender],
-        pushName
-      );
+      const summary = await generateSummary(model, conversationHistory[sender], pushName);
 
       // 2. Send Summary to Group
-      const groupId = TARGET_GROUP;
-      await sock.sendMessage(groupId, {
-        text: summary,
-      });
+      await sock.sendMessage(TARGET_GROUP, { text: summary });
 
       // 3. Clear History
       delete conversationHistory[sender];
-      console.log(`[PJ-MATKUL] Sesi dengan Dosen berakhir. Laporan dikirim ke ${groupId}`);
+      console.log(`[PJ-MATKUL] Sesi Selesai. Laporan dikirim.`);
     }
+
   } catch (error) {
     console.error("Error in privateBasisData handler:", error);
   }
@@ -155,16 +204,27 @@ SUMBER PERCAKAPAN:
 ${serializedHistory}
 
 INSTRUKSI:
-Berdasarkan percakapan di atas antara PJ dengan Dosen, buatkan laporan singkat:
-1. Status Jadwal Besok (Jadi/Tidak/Ganti)
-2. Jam & Ruangan (Jika ada)
-3. Catatan/Tugas (Jika ada)
+Buatkan laporan yang RAPI, TERSTRUKTUR, dan PROFESIONAL (WhatsApp Style).
+Jangan pakai bahasa gaul alay ("Guys", "kuy"). Gunakan Bahasa Indonesia yang baik tapi tetap ramah.
 
-Format: Bahasa santai informatif untuk teman sekelas.
-Contoh: "Guys, info dari Pak Dosen, besok kuliah Basis Data TETAP MASUK jam 10 ya di R.304. Jangan telat!"`;
+GUNAKAN FORMAT INI (Wajib mirip):
+
+📢 **INFO JADWAL KULIAH**
+Mata Kuliah: Basis Data
+
+✅ **STATUS: [MASUK / BATAL / PENGGANTI]**
+📅 Hari/Tgl: Besok
+⏰ Pukul: [Jam]
+📍 Ruangan/Link: [Lokasi]
+
+📝 **Catatan:**
+- [Info tambahan 1]
+- [Info tambahan 2]
+
+Terima kasih.`;
 
   try {
-     const response = await model.generateContent({
+    const response = await model.generateContent({
       contents: [
         {
           role: "user",
@@ -172,7 +232,7 @@ Contoh: "Guys, info dari Pak Dosen, besok kuliah Basis Data TETAP MASUK jam 10 y
         }
       ],
     });
-    
+
     return response.response.candidates[0]?.content?.parts[0]?.text || "Info Jadwal: Cek history chat.";
   } catch (e) {
     console.error("Error generating summary:", e);

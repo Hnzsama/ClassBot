@@ -1,4 +1,4 @@
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const AIHandler = require('../../utils/aiHandler');
 
 // Helper Title Case
 function toTitleCase(str) {
@@ -14,17 +14,11 @@ module.exports = {
         if (!from.endsWith("@g.us")) return;
 
         let rawInput = text.replace("#member-ai", "").trim();
+        const ai = new AIHandler(bot);
 
         // --- 1. DETEKSI MEDIA ---
-        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        let mediaPart = null; let hasMedia = false;
-        if (quotedMsg && (quotedMsg.imageMessage || quotedMsg.documentMessage)) {
-            try {
-                const buffer = await downloadMediaMessage({ key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg }, 'buffer', {});
-                mediaPart = { inlineData: { data: buffer.toString("base64"), mimeType: quotedMsg.imageMessage ? 'image/jpeg' : 'application/pdf' } };
-                hasMedia = true;
-            } catch (e) { }
-        }
+        const media = await ai.downloadMedia(msg, from);
+        const hasMedia = !!media;
 
         if (!rawInput && !hasMedia) return sock.sendMessage(from, { text: "⚠️ Masukkan instruksi atau foto." });
         if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });
@@ -72,18 +66,16 @@ module.exports = {
       ]
       `;
 
-            let parts = [systemPrompt];
-            if (hasMedia) { parts.push({ text: `Input Tambahan: "${rawInput}"` }); parts.push(mediaPart); }
-            else { parts.push({ text: `Input User: "${rawInput}"` }); }
+            // --- 4. EXECUTE AI ---
+            const result = await ai.generateJSON(systemPrompt, rawInput, media);
 
-            const result = await model.generateContent(parts);
-            let actionsList = [];
-            try {
-                const jsonMatch = result.response.text().match(/\[.*?\]/s);
-                actionsList = JSON.parse(jsonMatch[0]);
-            } catch (e) { return sock.sendMessage(from, { text: "❌ AI bingung membaca instruksi." }); }
+            if (!result.success) {
+                return sock.sendMessage(from, { text: "❌ AI bingung membaca instruksi." });
+            }
 
-            // --- 4. EXECUTE DB ---
+            const actionsList = result.data;
+
+            // --- 5. EXECUTE DB ---
             let report = { add: [], edit: [], delete: [], errors: [] };
 
             for (const item of actionsList) {
@@ -149,7 +141,7 @@ module.exports = {
                 } catch (e) { if (e.code !== 'P2025') report.errors.push(`Err: ${nim}`); }
             }
 
-            // --- 5. LAPORAN KEREN ---
+            // --- 6. LAPORAN KEREN ---
             let reply = `🤖 *LAPORAN AI MEMBER*\n──────────────────────\n`;
             reply += `🏫 Kelas: ${kelas.name}\n\n`;
             let hasChange = false;

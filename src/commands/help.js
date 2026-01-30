@@ -1,25 +1,18 @@
 const fs = require('fs');
 const path = require('path');
 
-// Mapping Category ID (from args) -> Folder Name (in src/commands)
-const CATEGORY_MAP = {
-  'kelas': 'class',
-  'semester': 'semester',
-  'mapel': 'subject',
-  'subject': 'subject',
-  'tugas': 'task',
-  'task': 'task',
-  'reminder': 'reminder',
-  'member': 'member',
-  'util': 'group', // Assuming utils are in group or spread
-  'fun': 'justForFun',
-  'ai': 'justForFun', // Grouping AI fun stuff here
-  'admin': 'admin'
+const COMMANDS_DIR = path.join(__dirname, '..', 'commands');
+
+// Helper: Get all directories in src/commands
+const getCommandCategories = () => {
+  return fs.readdirSync(COMMANDS_DIR, { withFileTypes: true })
+    .filter(dirent => dirent.isDirectory())
+    .map(dirent => dirent.name);
 };
 
-// Helper: Scan commands in directory
+// Helper: Scan commands in a specific folder
 const getCommandsInFolder = (folderName) => {
-  const cmdDir = path.join(__dirname, folderName);
+  const cmdDir = path.join(COMMANDS_DIR, folderName);
   if (!fs.existsSync(cmdDir)) return [];
 
   const files = fs.readdirSync(cmdDir).filter(f => f.endsWith('.js'));
@@ -28,7 +21,7 @@ const getCommandsInFolder = (folderName) => {
   for (const file of files) {
     try {
       const cmdPath = path.join(cmdDir, file);
-      // Delete cache to ensure fresh load (optional, be careful in prod)
+      // Delete cache for hot-reload feel
       delete require.cache[require.resolve(cmdPath)];
       const cmd = require(cmdPath);
       if (cmd.name && cmd.description) {
@@ -41,121 +34,114 @@ const getCommandsInFolder = (folderName) => {
   return commands;
 };
 
+// Helper: Get root commands (files directly in src/commands)
+const getRootCommands = () => {
+  const files = fs.readdirSync(COMMANDS_DIR).filter(f => f.endsWith('.js'));
+  const commands = [];
+  for (const file of files) {
+    if (file === 'help.js') continue; // Skip self
+    try {
+      const cmdPath = path.join(COMMANDS_DIR, file);
+      delete require.cache[require.resolve(cmdPath)]; // Hot reload
+      const cmd = require(cmdPath);
+      if (cmd.name && cmd.description) {
+        commands.push({ name: cmd.name, desc: cmd.description });
+      }
+    } catch (e) { }
+  }
+  return commands;
+}
+
 module.exports = {
   name: "#help",
-  description: "Pusat bantuan bot. Format: #help [kategori]",
+  description: "Pusat bantuan bot OTOMATIS. Format: #help [kategori]",
   execute: async (bot, from, sender, args, msg) => {
     const { sock } = bot;
     const pushName = msg.pushName || sender.split("@")[0];
     const categoryInput = args[0] ? args[0].toLowerCase() : "";
 
-    // --- 1. STATIC GUIDES (Panduan Manual) ---
+    // Header Mapping for Prettier Titles
+    const headerMap = {
+      'class': '🏫 KELAS', 'semester': '📅 SEMESTER', 'subject': '📚 MAPEL',
+      'task': '📝 TUGAS', 'reminder': '🔔 REMINDER', 'member': '👥 MEMBER',
+      'justForFun': '🤖 FUN & AI', 'group': '🌐 GROUP', 'admin': '👮 ADMIN',
+      'general': '📌 UMUM', 'root': '⚡ COMMANDS LAIN'
+    };
 
-    // SETUP
-    if (categoryInput === "setup" || categoryInput === "panduan") {
-      const text = `⚙️ *ADMIN SETUP GUIDE*
+    const categories = getCommandCategories();
 
-*1. CREATE CLASS (In Main Group)*
-Type: \`#class-add [Name], [Description]\`
-_(Use comma to separate)_
+    // 1. HELP DETAIL (Dynamic Category)
+    if (categoryInput) {
+      // Check if input matches a folder
+      const matchedCategory = categories.find(c => c.toLowerCase() === categoryInput);
 
-*2. CURRICULUM (Semester & Subjects)*
-Type: \`#semester-ai Create semesters 1 to 8 then activate semester 1\`
-Type: \`#subject-ai Add subjects Math, Algorithms, Database\`
+      if (matchedCategory) {
+        const cmds = getCommandsInFolder(matchedCategory);
+        if (cmds.length === 0) return sock.sendMessage(from, { text: `⚠️ Kategori *${matchedCategory}* kosong.` });
 
-*3. STUDENT DATA*
-Type: \`#member-add-ai\`
-_(Then send attendance photo/name list)_
+        const header = headerMap[matchedCategory] || matchedCategory.toUpperCase();
+        let text = `╭── [ *${header}* ]\n│\n`;
 
-_Type_ \`#help\` _to return._`;
-      return await sock.sendMessage(from, { text });
-    }
+        cmds.sort((a, b) => a.name.localeCompare(b.name));
+        cmds.forEach(c => text += `├ \`${c.name}\`\n│ ${c.desc}\n│\n`);
 
-    // COMMUNITY
-    if (categoryInput === "community") {
-      const text = `🌐 *COMMUNITY GROUP GUIDE*
-
-*COMMANDS:*
-├ \`#class-add [Name], [Description]\`
-│ (Run in Main Group/Info Channel).
-│
-╰ \`#class-assign [Class ID] [Main Group ID]\`
-  (Run in Community/Chat Group).
-
-_Type_ \`#help\` _to return._`;
-      return await sock.sendMessage(from, { text });
-    }
-
-    // --- 2. DYNAMIC COMMAND LISTS ---
-
-    const targetFolder = CATEGORY_MAP[categoryInput];
-
-    if (targetFolder) {
-      const cmds = getCommandsInFolder(targetFolder);
-
-      if (cmds.length === 0) {
-        return await sock.sendMessage(from, { text: `⚠️ Belum ada perintah di kategori *${categoryInput}*.` });
+        text = text.slice(0, -2); // Trim last box chars
+        text += `\n╰ _Total: ${cmds.length} Command_\n\n_Ketik_ \`#help\` _kembali._`;
+        return sock.sendMessage(from, { text: `📂 *MENU ${header}*\n\n${text}` });
       }
 
-      // Format List
-      const headerMap = {
-        'class': '🏫 MANAJEMEN KELAS',
-        'semester': '📅 SEMESTER UTAMA',
-        'subject': '📚 MATA KULIAH',
-        'task': '📝 TUGAS & PR',
-        'reminder': '🔔 PENGINGAT / REMINDER',
-        'member': '👥 MEMBER MANAGEMENT',
-        'justForFun': '🤖 AI & HIBURAN',
-        'group': '🌐 GROUP UTILITIES',
-        'admin': '👮 ADMIN TOOLS'
-      };
+      // Special Case: "root" or "lain" for root files
+      if (categoryInput === 'lain' || categoryInput === 'root') {
+        const rootCmds = getRootCommands();
+        let text = `╭── [ *COMMANDS LAIN* ]\n│\n`;
+        rootCmds.forEach(c => text += `├ \`${c.name}\`\n│ ${c.desc}\n│\n`);
+        text += `╰ _Total: ${rootCmds.length}_`;
+        return sock.sendMessage(from, { text });
+      }
 
-      const header = headerMap[targetFolder] || categoryInput.toUpperCase();
-      let cmdListText = `╭── [ *${header}* ]\n│\n`;
+      // Panduan Manual (Static)
+      if (categoryInput === 'setup') {
+        return sock.sendMessage(from, { text: `⚙️ *SETUP GUIDE*\n\n1. #class-add [Nama], [Deskripsi]\n2. #semester-ai Create 8 semester\n3. #subject-ai Add subjects...\n4. #member-add-ai` });
+      }
 
-      // Sort by length of name to look tidy? Or Alphabetical?
-      cmds.sort((a, b) => a.name.localeCompare(b.name));
-
-      cmds.forEach(c => {
-        cmdListText += `├ \`${c.name}\`\n│ ${c.desc}\n│\n`;
-      });
-
-      // Close box
-      cmdListText = cmdListText.substring(0, cmdListText.length - 2); // remove last newline+bar
-      cmdListText += `\n╰ _Total: ${cmds.length} Perintah_\n\n_Ketik_ \`#help\` _untuk kembali._`;
-
-      const finalMsg = `${header} COMMANDS\n\n${cmdListText}`;
-
-      return await sock.sendMessage(from, { text: finalMsg });
+      return sock.sendMessage(from, { text: `⚠️ Kategori tidak ditemukan.\nCek daftar dengan ketik \`#help\`` });
     }
 
-    // --- 3. MENU UTAMA (DEFAULT) ---
-    const text = `🤖 *CLASS BOT ASSISTANT*
-Halo, *${pushName}*! 👋
+    // 2. MAIN MENU (Dynamic List)
+    let menuText = `🤖 *CLASS BOT ASSISTANT*\n`;
+    menuText += `Halo, *${pushName}*! 👋\n\n`;
+    menuText += `👇 *PILIH KATEGORI PERINTAH:*\n`;
+    menuText += `Ketik \`#help [nama_kategori]\`\n\n`;
 
-Ketik \`#help [kategori]\` untuk melihat perintah.
+    // Loop categories
+    menuText += `╭── [ 📌 *DAFTAR KATEGORI* ]\n│\n`;
 
-╭── [ 📌 *DAFTAR KATEGORI* ]
-│
-├ \`#help setup\` (⭐ PENTING)
-│
-├ \`#help kelas\`     (Manajemen Kelas)
-├ \`#help semester\`  (Semester Kuliah)
-├ \`#help mapel\`     (Mata Kuliah)
-├ \`#help tugas\`     (Tugas/PR)
-├ \`#help reminder\`  (Pengingat)
-├ \`#help member\`    (Data Mahasiswa)
-├ \`#help util\`      (Tagging, Sticker, dll)
-├ \`#help fun\`       (AI, Games, Hiburan)
-│
-╰ \`#help community\` (Grup Community)
-
-──────────────
-*Dynamic Command List v2.0*`;
-
-    await sock.sendMessage(from, {
-      text: text,
-      mentions: [sender]
+    // Priority sorting for display?
+    const priority = ['class', 'task', 'member', 'subject', 'semester', 'reminder'];
+    const sortedCats = categories.sort((a, b) => {
+      const idxA = priority.indexOf(a);
+      const idxB = priority.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
     });
-  },
+
+    for (const cat of sortedCats) {
+      const label = headerMap[cat] || cat.toUpperCase();
+      // Optional: Count commands in it? (Might be slow if many files, skipping for speed)
+      menuText += `├ \`#help ${cat}\` (${label})\n`;
+    }
+
+    // Root commands check
+    const roots = getRootCommands();
+    if (roots.length > 0) {
+      menuText += `├ \`#help lain\` (Lainnya)\n`;
+    }
+
+    menuText += `│\n╰ \`#help setup\` (Panduan Awal)\n\n`;
+    menuText += `_v2.0 Dynamic Menu_`;
+
+    await sock.sendMessage(from, { text: menuText, mentions: [sender] });
+  }
 };

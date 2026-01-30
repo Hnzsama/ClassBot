@@ -1,4 +1,4 @@
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const AIHandler = require('../../utils/aiHandler');
 const fs = require('fs');
 const path = require('path');
 
@@ -22,31 +22,36 @@ module.exports = {
         if (!from.endsWith("@g.us")) return;
 
         let rawInput = text.replace("#task-ai", "").trim();
+        const ai = new AIHandler(bot);
 
-        // --- 1. DETEKSI MEDIA ---
-        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        let mediaPart = null; let hasMedia = false; let attachData = null;
-
+        // --- 1. DETEKSI MEDIA & LAMPIRAN ---
         const isAttachMode = rawInput.includes("--lampiran");
         rawInput = rawInput.replace("--lampiran", "").trim();
 
-        if (quotedMsg) {
-            const type = Object.keys(quotedMsg).find(k => ['imageMessage', 'videoMessage', 'documentMessage'].includes(k));
-            if (type) {
-                try {
-                    const buffer = await downloadMediaMessage({ key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg }, 'buffer', {});
-                    if (isAttachMode) {
-                        const ext = quotedMsg[type].mimetype.split('/')[1] || 'bin';
-                        const fName = `${Date.now()}_ai.${ext}`;
-                        fs.writeFileSync(path.join(MEDIA_DIR, fName), buffer);
-                        attachData = JSON.stringify({ type, mimetype: quotedMsg[type].mimetype, localFilePath: path.join(MEDIA_DIR, fName) });
-                    } else {
-                        mediaPart = { inlineData: { data: buffer.toString("base64"), mimeType: "image/jpeg" } };
-                        hasMedia = true;
-                    }
-                } catch (e) { return sock.sendMessage(from, { text: "❌ Gagal download media." }); }
+        const media = await ai.downloadMedia(msg, from);
+        let attachData = null;
+
+        if (media && isAttachMode) {
+            try {
+                const mediaMessage = media.mediaMessage;
+                const extension = media.mimeType.split('/')[1] || 'bin';
+                const sha = mediaMessage.fileSha256 ? mediaMessage.fileSha256.toString('hex').substring(0, 8) : Date.now();
+                const fName = `${Date.now()}_ai.${extension}`;
+                const localFilePath = path.join(MEDIA_DIR, fName);
+
+                fs.writeFileSync(localFilePath, media.buffer);
+
+                attachData = JSON.stringify({
+                    type: media.type + 'Message',
+                    mimetype: media.mimeType,
+                    localFilePath: localFilePath
+                });
+            } catch (e) {
+                console.error("Attachment Error:", e);
             }
         }
+
+        const hasMedia = !!media;
 
         if (!rawInput && !hasMedia) return sock.sendMessage(from, { text: "⚠️ Masukkan instruksi atau foto soal." });
         if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });
@@ -99,27 +104,17 @@ module.exports = {
 
 
             // --- 4. EXECUTE AI (Refactored) ---
-            const { generateAIContent } = require('../../utils/aiHandler');
+            const result = await ai.generateJSON(systemPrompt, rawInput, media);
 
-            let mediaPayload = null;
-            if (mediaPart) {
-                mediaPayload = {
-                    buffer: Buffer.from(mediaPart.inlineData.data, 'base64'),
-                    mimeType: mediaPart.inlineData.mimeType
-                };
+            if (!result.success) {
+                return sock.sendMessage(from, { text: "❌ AI gagal memproses permintaan." });
             }
 
             let actionsList = [];
-            try {
-                const result = await generateAIContent(model, systemPrompt, `TARGET TASKS:\n${taskContext}\n\nMAPEL: ${subjectsList}\nWAKTU: ${todayStr}`, rawInput, mediaPayload);
-                if (Array.isArray(result)) {
-                    actionsList = result;
-                } else if (result) {
-                    actionsList = [result]; // Handle single object return
-                }
-            } catch (e) {
-                console.error("AI Handler Error:", e);
-                return sock.sendMessage(from, { text: "❌ AI gagal memproses permintaan." });
+            if (Array.isArray(result.data)) {
+                actionsList = result.data;
+            } else if (result.data) {
+                actionsList = [result.data]; // Handle single object return
             }
 
             if (!actionsList || actionsList.length === 0) return sock.sendMessage(from, { text: "⚠️ AI tidak menemukan instruksi yang jelas." });

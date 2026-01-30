@@ -1,4 +1,4 @@
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const AIHandler = require('../../utils/aiHandler');
 
 module.exports = {
     name: "#member-add-ai",
@@ -9,27 +9,11 @@ module.exports = {
         if (!from.endsWith("@g.us")) return;
 
         let rawInput = text.replace("#member+ai", "").trim();
+        const ai = new AIHandler(bot);
 
         // --- 1. DETEKSI MEDIA (FOTO/DOC) ---
-        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        let mimeType = "text/plain";
-        let hasMedia = false;
-        let mediaBuffer = null;
-
-        if (quotedMsg && (quotedMsg.imageMessage || quotedMsg.documentMessage)) {
-            try {
-                mimeType = quotedMsg.imageMessage ? 'image/jpeg' : 'application/pdf';
-                mediaBuffer = await downloadMediaMessage(
-                    { key: { id: msg.message.extendedTextMessage.contextInfo.stanzaId, remoteJid: from }, message: quotedMsg },
-                    'buffer',
-                    {},
-                );
-                hasMedia = true;
-            } catch (e) {
-                console.error("Download Error:", e);
-                return sock.sendMessage(from, { text: "❌ Gagal mengunduh media." });
-            }
-        }
+        const media = await ai.downloadMedia(msg, from);
+        const hasMedia = !!media;
 
         // Validasi Input
         if (!rawInput && !hasMedia) {
@@ -68,30 +52,18 @@ module.exports = {
       ]
       `;
 
-            let parts = [systemPrompt];
-            if (hasMedia) {
-                parts.push({ text: `Input Tambahan: "${rawInput}" (Prioritaskan Gambar)` });
-                parts.push({ inlineData: { mimeType: mimeType, data: mediaBuffer.toString('base64') } });
-            } else {
-                parts.push({ text: `Input Teks: "${rawInput}"` });
-            }
-
             // --- 4. EKSEKUSI AI ---
-            const result = await model.generateContent(parts);
-            const aiResponse = result.response.text();
+            // Note: prompt construction logic in AIHandler handles text + media
+            const result = await ai.generateJSON(systemPrompt, rawInput, media);
 
-            // --- 5. PARSING JSON ---
-            let rawDataArray = [];
-            try {
-                const jsonMatch = aiResponse.match(/\[.*?\]/s);
-                if (!jsonMatch) throw new Error("JSON Array not found");
-                rawDataArray = JSON.parse(jsonMatch[0]);
-            } catch (e) {
-                console.error("AI Parse Error:", aiResponse);
+            if (!result.success) {
+                console.error("AI Error:", result.error || result.raw);
                 return sock.sendMessage(from, { text: "❌ *AI BINGUNG*\nGagal membaca data. Pastikan foto jelas." });
             }
 
-            if (rawDataArray.length === 0) {
+            const rawDataArray = result.data;
+
+            if (!Array.isArray(rawDataArray) || rawDataArray.length === 0) {
                 return sock.sendMessage(from, { text: `📂 AI tidak menemukan data mahasiswa yang valid.` });
             }
 

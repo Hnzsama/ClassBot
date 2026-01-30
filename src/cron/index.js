@@ -6,6 +6,7 @@ const initJam4Sender = require("./jam4Sender");
 const initMotivationSender = require("./motivationSender");
 const initWeatherSender = require("./weatherSender");
 const initPjMatkulSender = require("./pjMatkulSender");
+const initFollowUpWorker = require("./followUpWorker");
 
 function initCronJobs(bot) {
   console.log("\n⏰ Initializing Cron Jobs...");
@@ -17,6 +18,7 @@ function initCronJobs(bot) {
   initMotivationSender(bot);
   initWeatherSender(bot);
   initPjMatkulSender(bot);
+  initFollowUpWorker(bot);
 
   console.log("✨ All Cron Jobs are running.\n");
 }
