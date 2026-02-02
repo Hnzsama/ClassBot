@@ -17,8 +17,8 @@ function initCronJobs(bot) {
   initJam4Sender(bot);
   initMotivationSender(bot);
   initWeatherSender(bot);
-  initPjMatkulSender(bot);
-  initFollowUpWorker(bot);
+  // initPjMatkulSender(bot);
+  // initFollowUpWorker(bot);
 
   console.log("✨ All Cron Jobs are running.\n");
 }

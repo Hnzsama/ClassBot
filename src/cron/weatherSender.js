@@ -1,8 +1,8 @@
 const cron = require("node-cron");
+const fetch = require("node-fetch"); // Ensure node-fetch is available if not global (in Node 18+ it is global)
 
-// ID Target: GRUP UTAMA
-const TARGET_GROUP_ID = "120363421309923905@g.us";
-const BMKG_API_URL = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=35.78.22.1004"; // Ketintang, Surabaya
+// BMKG API for Ketintang, Surabaya
+const BMKG_API_URL = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=35.78.22.1004";
 
 module.exports = (bot) => {
     // JADWAL: Jam 06:00 WIB Setiap Hari
@@ -10,32 +10,34 @@ module.exports = (bot) => {
         console.log('[CRON-WEATHER] 🔄 Mengambil data cuaca BMKG...');
 
         try {
-            // 1. Fetch Data dari BMKG
+            // 1. Ambil semua kelas
+            const classes = await bot.db.prisma.class.findMany({ select: { mainGroupId: true, name: true } });
+            if (classes.length === 0) {
+                console.log("[CRON-WEATHER] Tidak ada kelas terdaftar.");
+                return;
+            }
+
+            // 2. Fetch Data dari BMKG
             const response = await fetch(BMKG_API_URL);
             if (!response.ok) {
                 throw new Error(`BMKG API Error: ${response.statusText}`);
             }
             const data = await response.json();
 
-            // 2. Parse Data Penting (Ambil data hari ini/besok yang relevan)
-            // Struktur: data.data[0].cuaca (Array per jam)
+            // 3. Parse Data Penting 
             if (!data?.data?.[0]?.cuaca) {
                 throw new Error("Struktur data BMKG tidak valid.");
             }
 
-            const cuacaList = data.data[0].cuaca.flat(); // Flatten array of arrays
-
-            // Ambil cuaca untuk jam-jam penting (Pagi 06:00, Siang 12:00, Malam 18:00)
-            // Data BMKG biasanya per 3 jam atau per jam. Kita cari yang mendekati.
+            const cuacaList = data.data[0].cuaca.flat();
             const relevantTimes = [6, 12, 18];
             const forecastSummary = [];
 
             relevantTimes.forEach(targetHour => {
-                // Cari entry yang local_datetime jamnya cocok
                 const entry = cuacaList.find(c => {
                     if (!c.local_datetime) return false;
                     const hour = new Date(c.local_datetime).getHours();
-                    return hour === targetHour || hour === targetHour + 1; // Toleransi 1 jam
+                    return hour === targetHour || hour === targetHour + 1;
                 });
 
                 if (entry) {
@@ -48,44 +50,56 @@ module.exports = (bot) => {
                 }
             });
 
-            // 3. Generate Pesan (AI / Fallback)
-            let message = `🌤️ *Prakiraan Cuaca Surabaya Hari Ini* 🌤️\n\n`;
+            // 4. Generate Pesan (AI / Fallback) - Generate Once
+            let message = "";
             const location = `📍 ${data.lokasi?.desa || 'Ketintang'}, ${data.lokasi?.kotkab || 'Surabaya'}`;
+            const header = `🌤️ *Prakiraan Cuaca Surabaya Hari Ini* 🌤️`;
 
             if (bot.model) {
-                // AI MODE
                 const aiPrompt = `
-            Bertindaklah sebagai penyiar radio kampus yang asik. Buatkan laporan cuaca untuk mahasiswa Unesa hari ini berdasarkan data ini:
-            Lokasi: ${location}
-            Data: ${JSON.stringify(forecastSummary)}
-            
-            Gunakan gaya bahasa santai, semangat pagi, dan selipkan tips singkat (misal: "jangan lupa bawa payung" kalau hujan, atau "pakai sunscreen" kalau panas). 
-            
-            Format output:
-            [Opening Semangat]
-            [Detail Cuaca Pagi/Siang/Malam pake emoji]
-            [Tips Harian]
-            
-            Sumber data: BMKG.
-            `;
+Data Cuaca: ${JSON.stringify(forecastSummary)}
+Lokasi: ${location}
+
+Tugas: Buat laporan cuaca super singkat.
+JANGAN pakai format markdown heading (seperti # atau ##).
+JANGAN tambah kalimat pembuka seperti "Berikut laporan cuaca" atau "Halo mahasiswa".
+LANGSUNG SAJA isi format di bawah ini:
+
+${header}
+
+${location}
+
+• *Pagi:* {isi suhu}°C, {isi cuaca}
+• *Siang:* {isi suhu}°C, {isi cuaca}
+• *Malam:* {isi suhu}°C, {isi cuaca}
+
+_Sumber: BMKG_
+`;
 
                 try {
                     const result = await bot.model.generateContent(aiPrompt);
                     const aiText = result.response.text().trim();
-                    message = `📻 *Weather Update - ClassBot*\n\n${aiText}`;
+                    message = aiText;
                 } catch (e) {
                     console.error("[CRON-WEATHER] AI Gen Failed:", e.message);
-                    // Fallback ke manual
-                    message += formatManualMessage(location, forecastSummary);
+                    message = formatManualMessage(header, location, forecastSummary);
                 }
             } else {
-                // MANUAL MODE
-                message += formatManualMessage(location, forecastSummary);
+                message = formatManualMessage(header, location, forecastSummary);
             }
 
-            // 4. Kirim Pesan
-            await bot.sock.sendMessage(TARGET_GROUP_ID, { text: message });
-            console.log(`[CRON-WEATHER] ✅ Sukses kirim laporan cuaca.`);
+            // 5. Loop Kirim ke Semua Kelas
+            console.log(`[CRON-WEATHER] Mengirim ke ${classes.length} kelas...`);
+            for (const cls of classes) {
+                if (!cls.mainGroupId) continue;
+                try {
+                    await bot.sock.sendMessage(cls.mainGroupId, { text: message });
+                    await new Promise(r => setTimeout(r, 1000));
+                } catch (e) {
+                    console.error(`[CRON-WEATHER] Gagal kirim ke ${cls.name}:`, e.message);
+                }
+            }
+            console.log("[CRON-WEATHER] ✅ Selesai mengirim laporan cuaca.");
 
         } catch (err) {
             console.error("[CRON-WEATHER] Error:", err.message);
@@ -97,8 +111,8 @@ module.exports = (bot) => {
     console.log("✅ [CRON] Weather Sender (Jadwal: 06:00) loaded.");
 };
 
-function formatManualMessage(location, summary) {
-    let text = `${location}\n\n`;
+function formatManualMessage(header, location, summary) {
+    let text = `${header}\n\n${location}\n\n`;
     summary.forEach(item => {
         text += `• *${item.jam}:* ${item.suhu}°C, ${item.cuaca}\n`;
     });

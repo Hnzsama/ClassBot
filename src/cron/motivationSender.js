@@ -5,12 +5,9 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const ffmpegPath = require("ffmpeg-static");
 
-// Lokasi gambar
-const IMAGE_PATH = path.join(__dirname, "../assets/motivation.png");
-const TEMP_WEBP_PATH = path.join(__dirname, "../assets/temp_motivation_cron.webp");
-
-// ID Target
-const TARGET_GROUP_ID = "120363421309923905@g.us";
+// Folder Motivations
+const MOTIVATION_DIR = path.join(__dirname, "../assets/motivations");
+const TEMP_PREFIX = "temp_motivation_";
 
 module.exports = (bot) => {
   // JADWAL: Jam 00:00 WIB Setiap Hari
@@ -18,60 +15,96 @@ module.exports = (bot) => {
     console.log('[CRON-MOTIVATION] 🔄 Mengirim motivasi tengah malam...');
 
     try {
-      if (!fs.existsSync(IMAGE_PATH)) {
-        console.error(`[CRON-MOTIVATION] ❌ Gagal: File gambar tidak ditemukan.`);
+      // 1. Ambil semua kelas yang terdaftar
+      const classes = await bot.db.prisma.class.findMany({
+        select: { mainGroupId: true, name: true }
+      });
+
+      if (classes.length === 0) {
+        console.log("[CRON-MOTIVATION] Tidak ada kelas terdaftar.");
         return;
       }
 
-      // 1. KONVERSI GAMBAR KE WEBP
-      const ffmpegArgs = [
-        "-i", IMAGE_PATH,
-        "-vf", "scale=512:512:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:-1:-1:color=0x00000000",
-        "-vcodec", "libwebp",
-        "-lossless", "1",
-        "-preset", "default",
-        "-loop", "0",
-        "-an",
-        "-vsync", "0",
-        "-y",
-        TEMP_WEBP_PATH
-      ];
+      console.log(`[CRON-MOTIVATION] Mengirim ke ${classes.length} kelas...`);
 
-      const run = spawnSync(ffmpegPath, ffmpegArgs);
-
-      if (run.error || !fs.existsSync(TEMP_WEBP_PATH)) {
-        console.error("[CRON-MOTIVATION] Gagal konversi stiker.");
-        await bot.sock.sendMessage(TARGET_GROUP_ID, { text: "⚠️ Gagal memproses stiker motivasi." });
+      // Ambil list file di folder motivations
+      if (!fs.existsSync(MOTIVATION_DIR)) {
+        console.error(`[CRON-MOTIVATION] Folder assets/motivations tidak ditemukan!`);
         return;
       }
 
-      // 2. BACA FILE WEBP
-      const stickerBuffer = fs.readFileSync(TEMP_WEBP_PATH);
+      const files = fs.readdirSync(MOTIVATION_DIR).filter(f => /\.(png|jpg|jpeg|webp)$/i.test(f));
+      if (files.length === 0) {
+        console.error(`[CRON-MOTIVATION] Folder assets/motivations kosong!`);
+        return;
+      }
 
-      // 3. Pesan Teks (Dynamic AI / Fallback)
-      let message = "🌙 *Selamat Malam!* 🌙\n\nHari baru telah dimulai. Jangan lupa istirahat yang cukup agar besok segar kembali! 💤✨\n_#MidnightMotivation_";
+      // Generate Text AI Sekali saja untuk efisiensi (atau per kelas jika mau beda-beda, tapi efisiensi lebih baik sekali)
+      // Request user: "pilih acak untuk setiap kelas" -> gambar beda, teks mungkin sama gapapa? 
+      // User says "untuk gambar motivasi itu ada di folder... pilih acak untuk setiap kelas".
+      // Teks AI saya buat sekali generate saja untuk semua biar konsisten "Tema Hari Ini".
+
+      let messageText = "🌙 *Selamat Malam!* 🌙\n\nHari baru telah dimulai. Jangan lupa istirahat yang cukup agar besok segar kembali! 💤✨\n_#MidnightMotivation_";
 
       if (bot.model) {
         try {
-          const aiPrompt = "Buatkan quotes motivasi singkat (maks 2 kalimat) tapi sangat ngena/deep untuk mahasiswa yang masih begadang atau baru mau tidur. Tema: Semangat belajar, masa depan, dan pentingnya istirahat. Akhiri dengan hashtag #MidnightMotivation. Pakai emoji bulan/bintang.";
+          const aiPrompt = "Buatkan SATU quotes motivasi malam singkat (maks 2 kalimat) yang ngena/deep buat mahasiswa yang baru mau tidur. Tema: Semangat belajar, masa depan, rest is productive. HANYA OUTPUT TEKS QOUTES SAJA. Jangan ada pembuka 'Ini pilihannya' dll. Format: 'Kata-kata mutiara. (Emoji)' akhiri dengan baris baru dan hashtag #MidnightMotivation. Jangan pakai tanda petik.";
           const result = await bot.model.generateContent(aiPrompt);
           const aiText = result.response.text().trim();
-          if (aiText) {
-            message = `🤖 *AI Motivation:*\n${aiText}`;
-          }
+          if (aiText) messageText = `🌙 *Midnight Motivation* 🌙\n\n${aiText.replace(/^["']|["']$/g, '')}`;
         } catch (e) {
-          console.error("[CRON-MOTIVATION] Gagal generate teks AI, menggunakan fallback:", e.message);
+          console.error("[CRON-MOTIVATION] Gagal AI Gen:", e.message);
         }
       }
 
-      // 4. KIRIM PESAN & STIKER
-      await bot.sock.sendMessage(TARGET_GROUP_ID, { text: message });
-      await bot.sock.sendMessage(TARGET_GROUP_ID, { sticker: stickerBuffer });
+      // Loop setiap kelas
+      for (const cls of classes) {
+        if (!cls.mainGroupId) continue;
 
-      console.log(`[CRON-MOTIVATION] ✅ Sukses kirim ke Grup ${TARGET_GROUP_ID}`);
+        try {
+          // Pilih Random Image
+          const randomFile = files[Math.floor(Math.random() * files.length)];
+          const inputPath = path.join(MOTIVATION_DIR, randomFile);
+          const tempWebP = path.join(__dirname, `../assets/${TEMP_PREFIX}${cls.mainGroupId}.webp`);
 
-      // 5. BERSIHKAN FILE TEMP
-      fs.unlinkSync(TEMP_WEBP_PATH);
+          // Convert ke Sticker (Crop/Scale)
+          const ffmpegArgs = [
+            "-i", inputPath,
+            "-vf", "scale=512:512:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:-1:-1:color=0x00000000",
+            "-vcodec", "libwebp",
+            "-lossless", "1",
+            "-preset", "default",
+            "-loop", "0",
+            "-an",
+            "-vsync", "0",
+            "-y",
+            tempWebP
+          ];
+
+          const run = spawnSync(ffmpegPath, ffmpegArgs);
+          if (run.error || !fs.existsSync(tempWebP)) {
+            console.error(`[CRON-MOTIVATION] Gagal convert untuk ${cls.name}:`, run.stderr?.toString());
+            // Kirim pesan teks saja jika gagal sticker
+            await bot.sock.sendMessage(cls.mainGroupId, { text: messageText });
+          } else {
+            // Kirim Sticker + Text
+            const stickerBuffer = fs.readFileSync(tempWebP);
+            await bot.sock.sendMessage(cls.mainGroupId, { text: messageText });
+            await bot.sock.sendMessage(cls.mainGroupId, { sticker: stickerBuffer });
+
+            // Cleanup temp
+            fs.unlinkSync(tempWebP);
+          }
+
+          console.log(`[CRON-MOTIVATION] ✅ Sukses kirim ke ${cls.name} (${cls.mainGroupId})`);
+
+          // Delay kecil biar ga spamming banget
+          await new Promise(r => setTimeout(r, 2000));
+
+        } catch (errLoop) {
+          console.error(`[CRON-MOTIVATION] Error sending to ${cls.name}:`, errLoop.message);
+        }
+      }
 
     } catch (err) {
       console.error("[CRON-MOTIVATION] Error:", err);
