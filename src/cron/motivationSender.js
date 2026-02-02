@@ -3,6 +3,7 @@ const cron = require("node-cron");
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const ffmpegPath = require("ffmpeg-static");
 
 // Lokasi gambar
 const IMAGE_PATH = path.join(__dirname, "../assets/motivation.png");
@@ -36,7 +37,7 @@ module.exports = (bot) => {
         TEMP_WEBP_PATH
       ];
 
-      const run = spawnSync("ffmpeg", ffmpegArgs);
+      const run = spawnSync(ffmpegPath, ffmpegArgs);
 
       if (run.error || !fs.existsSync(TEMP_WEBP_PATH)) {
         console.error("[CRON-MOTIVATION] Gagal konversi stiker.");
