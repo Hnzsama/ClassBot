@@ -4,7 +4,8 @@ const {
   fetchLatestBaileysVersion,
   DisconnectReason,
 } = require("@whiskeysockets/baileys");
-const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
+const { HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
+const SmartGeminiModel = require("./utils/smartGemini");
 require("dotenv").config();
 const qrcode = require("qrcode-terminal");
 const fs = require("fs");
@@ -27,10 +28,13 @@ async function startSock() {
   // INISIALISASI GEMINI AI
   let model;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  if (GEMINI_API_KEY) {
+  const GEMINI_API_KEY_BACKUP = process.env.GEMINI_API_KEY_BACKUP;
+
+  const apiKeys = [GEMINI_API_KEY, GEMINI_API_KEY_BACKUP].filter(Boolean);
+
+  if (apiKeys.length > 0) {
     try {
-      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-      model = genAI.getGenerativeModel({
+      model = new SmartGeminiModel(apiKeys, {
         model: "gemini-2.5-flash",
         safetySettings: [
           { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -39,7 +43,7 @@ async function startSock() {
           { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
         ]
       });
-      console.log("✅ Koneksi ke Gemini AI berhasil.");
+      console.log(`✅ Koneksi ke Gemini AI berhasil. (${apiKeys.length} keys loaded)`);
     } catch (e) {
       console.error("❌ Gagal inisialisasi Gemini AI:", e.message);
       model = null;
