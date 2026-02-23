@@ -11,8 +11,21 @@ module.exports = {
       });
     }
 
-    const jumlahKelompok = parseInt(args[0]);
-    const judulTugas = args.slice(1).join(" ");
+    let exceptions = [];
+    let judulTugas = "";
+    let jumlahKelompok = parseInt(args[0]);
+
+    // Find --exc flag
+    const excIndex = args.indexOf("--exc");
+    if (excIndex !== -1) {
+      // Parse exceptions
+      const rawExceptions = args.slice(excIndex + 1).join(",");
+      exceptions = rawExceptions.split(",").map(e => e.trim()).filter(e => e.length > 0);
+      // Title is everything between count and --exc
+      judulTugas = args.slice(1, excIndex).join(" ");
+    } else {
+      judulTugas = args.slice(1).join(" ");
+    }
 
     if (isNaN(jumlahKelompok) || jumlahKelompok <= 0) {
       return await sock.sendMessage(from, { text: "❌ Jumlah kelompok harus angka > 0." });
@@ -32,10 +45,27 @@ module.exports = {
       });
 
       if (members.length === 0) return await sock.sendMessage(from, { text: "❌ Data member kosong." });
-      if (jumlahKelompok > members.length) return await sock.sendMessage(from, { text: `❌ Jumlah kelompok terlalu banyak.` });
+
+      // 3. Validasi & Filter Members (Exceptions)
+      const allNimSuffixes = members.map(m => m.nim.slice(-3));
+      const invalidNims = exceptions.filter(e => !allNimSuffixes.includes(e));
+
+      if (invalidNims.length > 0) {
+        return await sock.sendMessage(from, {
+          text: `⚠️ *Exception Tidak Valid*\n\nNIM berikut tidak ditemukan di kelas ini:\n- ${invalidNims.join("\n- ")}\n\nPastikan menggunakan 3 digit NIM terakhir yang benar.`
+        });
+      }
+
+      const eligibleMembers = members.filter(m => {
+        const nimSuffix = m.nim.slice(-3);
+        return !exceptions.includes(nimSuffix);
+      });
+
+      if (eligibleMembers.length === 0) return await sock.sendMessage(from, { text: "❌ Tidak ada anggota yang tersisa setelah difilter exception." });
+      if (jumlahKelompok > eligibleMembers.length) return await sock.sendMessage(from, { text: `❌ Jumlah kelompok terlalu banyak (Hanya ada ${eligibleMembers.length} anggota tersedia).` });
 
       // Logic Acak
-      const shuffled = [...members];
+      const shuffled = [...eligibleMembers];
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -75,6 +105,9 @@ module.exports = {
       outputText += `│ 📚 Tugas: *${savedAssignment.judul}*\n`;
       outputText += `│ 🏫 Kelas: ${kelas.name}\n`;
       outputText += `│ 📅 Tanggal: ${todayStr}\n`;
+      if (exceptions.length > 0) {
+        outputText += `│ 🚫 Exception: ${exceptions.join(", ")}\n`;
+      }
       outputText += `╰──────────────────────\n`;
 
       savedAssignment.subGroups.forEach((sub) => {

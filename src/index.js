@@ -116,6 +116,10 @@ async function startSock() {
         const command = require(filePath);
         if (command.name) {
           bot.commands.set(command.name, command);
+          // Register aliases if any
+          if (command.alias && Array.isArray(command.alias)) {
+            command.alias.forEach(alias => bot.commands.set(alias, command));
+          }
         }
       } catch (e) {
         console.error(`❌ Gagal memuat ${filePath}:`, e);
@@ -164,16 +168,6 @@ async function startSock() {
       const from = msg.key.remoteJid;
       const sender = msg.key.participant || msg.key.remoteJid;
 
-      // ===== PRIVATE CHAT HANDLER (Basis Data PJ) =====
-      if (!from.endsWith("@g.us")) {
-        try {
-          const privateBasisDataHandler = require('./handlers/privateBasisData');
-          await privateBasisDataHandler(bot, msg);
-          continue; // Skip further processing for private messages
-        } catch (error) {
-          console.error("Error in privateBasisData handler:", error);
-        }
-      }
 
       let text = "";
       if (msg.message.conversation) text = msg.message.conversation;

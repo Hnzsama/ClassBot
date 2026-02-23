@@ -1,11 +1,11 @@
 module.exports = {
-  name: "#explain",
-  alias: ["#jelaskan"],
+  name: "#jelasin-dong",
+  alias: ["#jelaskan", "#explain"],
   description: "Explain topic simply. Format: #explain [Topic]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
 
-    const topic = text.replace("#jelaskan", "").trim();
+    const topic = text.split(" ").slice(1).join(" ").trim();
     if (!topic) return sock.sendMessage(from, { text: "⚠️ Masukkan topik yang ingin dijelaskan.\nContoh: `#jelaskan apa itu pointer di C++`" });
 
     if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });

@@ -1,11 +1,11 @@
 module.exports = {
-  name: "#whois",
-  alias: ["#siapa"],
+  name: "#siapa-paling",
+  alias: ["#siapa", "#whois"],
   description: "Pick random member. Format: #whois [Question]",
   execute: async (bot, from, sender, args, msg, text) => {
     if (!from.endsWith("@g.us")) return;
 
-    const question = text.replace("#siapa", "").trim();
+    const question = text.split(" ").slice(1).join(" ").trim();
 
     if (!question) {
       return bot.sock.sendMessage(from, { text: "⚠️ Masukkan pertanyaannya.\nContoh: `#siapa yang belum mandi?`" });

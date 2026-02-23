@@ -1,8 +1,11 @@
 const cron = require("node-cron");
-const fetch = require("node-fetch"); // Ensure node-fetch is available if not global (in Node 18+ it is global)
+// Using native fetch (supported in Node 18+)
 
 // BMKG API for Ketintang, Surabaya
 const BMKG_API_URL = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=35.78.22.1004";
+
+// Logic Constants
+const TARGET_GROUP_ID = "120363421309923905@g.us";
 
 module.exports = (bot) => {
     // JADWAL: Jam 06:00 WIB Setiap Hari
@@ -11,7 +14,10 @@ module.exports = (bot) => {
 
         try {
             // 1. Ambil semua kelas
-            const classes = await bot.db.prisma.class.findMany({ select: { mainGroupId: true, name: true } });
+            const classes = await bot.db.prisma.class.findMany({
+                where: { mainGroupId: TARGET_GROUP_ID },
+                select: { mainGroupId: true, name: true }
+            });
             if (classes.length === 0) {
                 console.log("[CRON-WEATHER] Tidak ada kelas terdaftar.");
                 return;

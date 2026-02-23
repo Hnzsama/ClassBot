@@ -1,12 +1,12 @@
 module.exports = {
-  name: "#rhyme",
-  alias: ["#pantun"],
+  name: "#pantun-kocak",
+  alias: ["#pantun", "#rhyme"],
   description: "Generate funny rhymes. Format: #rhyme [Topic]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
 
     // Ambil topik dari input
-    const topic = text.replace("#pantun", "").trim() || "Random/Bebas";
+    const topic = text.split(" ").slice(1).join(" ").trim() || "Random/Bebas";
 
     if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI sedang tidak aktif." });
 

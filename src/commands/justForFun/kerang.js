@@ -8,9 +8,9 @@ let IS_ACTIVE = true; // Status ON/OFF Kerang Ajaib
 // ----------------------------------------------------
 
 module.exports = {
-  name: "#magic-8ball",
-  alias: ["#kerang"],
-  description: "Ask Magic 8-Ball. Format: #magic-8ball [Question]",
+  name: "#kerang-ajaib",
+  alias: ["#kerang", "#magic-8ball"],
+  description: "Tanya Kerang Ajaib. Format: #kerang-ajaib [Pertanyaan]",
 
   // --- EKSEKUSI UTAMA (COMMAND) ---
   execute: async (bot, from, sender, args, msg, text) => {
@@ -69,7 +69,7 @@ module.exports = {
       return sock.sendMessage(from, { text: "💤 _(Kerang Ajaib sedang dimatikan oleh Admin)_" });
     }
 
-    const question = text.replace("#kerang-ajaib", "").trim();
+    const question = text.split(" ").slice(1).join(" ").trim();
     if (!question) {
       return sock.sendMessage(from, { text: "🐚 *Kerang Ajaib:* Tarik ulur talinya, lalu tanyakan sesuatu." });
     }

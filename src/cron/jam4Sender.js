@@ -19,7 +19,10 @@ module.exports = (bot) => {
 
     try {
       // 1. Ambil semua kelas
-      const classes = await bot.db.prisma.class.findMany({ select: { mainGroupId: true, name: true } });
+      const classes = await bot.db.prisma.class.findMany({
+        where: { mainGroupId: SPECIAL_GROUP_ID },
+        select: { mainGroupId: true, name: true }
+      });
       if (classes.length === 0) {
         console.log("[CRON-JAM4] Tidak ada kelas terdaftar.");
         return;

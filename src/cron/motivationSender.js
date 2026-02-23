@@ -9,6 +9,9 @@ const ffmpegPath = require("ffmpeg-static");
 const MOTIVATION_DIR = path.join(__dirname, "../assets/motivations");
 const TEMP_PREFIX = "temp_motivation_";
 
+// Logic Constants
+const TARGET_GROUP_ID = "120363421309923905@g.us";
+
 module.exports = (bot) => {
   // JADWAL: Jam 00:00 WIB Setiap Hari
   cron.schedule('0 0 * * *', async () => {
@@ -17,6 +20,7 @@ module.exports = (bot) => {
     try {
       // 1. Ambil semua kelas yang terdaftar
       const classes = await bot.db.prisma.class.findMany({
+        where: { mainGroupId: TARGET_GROUP_ID },
         select: { mainGroupId: true, name: true }
       });
 

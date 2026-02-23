@@ -1,6 +1,6 @@
 module.exports = {
-  name: "#roast",
-  alias: ["#ledek"],
+  name: "#roasting-dong",
+  alias: ["#ledek", "#roast"],
   description: "Roast your friend. Format: #roast [@tag]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;

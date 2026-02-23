@@ -1,11 +1,11 @@
 module.exports = {
-  name: "#lecturer",
-  alias: ["#dosen"],
+  name: "#tanya-dosen",
+  alias: ["#dosen", "#lecturer"],
   description: "Chat with Lecturer Persona AI. Format: #lecturer [Question]",
   execute: async (bot, from, sender, args, msg, text) => {
     const { sock, model } = bot;
 
-    const question = text.replace("#tanya-dosen", "").trim();
+    const question = text.split(" ").slice(1).join(" ").trim();
     if (!question) return sock.sendMessage(from, { text: "👨‍🏫 *Dosen:* \"Mana pertanyaannya? Jangan buang waktu bapak.\"" });
 
     if (!model) return sock.sendMessage(from, { text: "❌ Fitur AI mati." });
